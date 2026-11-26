@@ -8,8 +8,9 @@ on:
     branches: [main, deploy]
   workflow_dispatch:
 
+# One group per branch: a push to main must never cancel the deploy run.
 concurrency:
-  group: deploy-production
+  group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

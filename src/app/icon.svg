@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7a4d"/>
+      <stop offset="1" stop-color="#f2461f"/>
+    </linearGradient>
+  </defs>
+  <!-- Coral tile -->
+  <rect width="64" height="64" rx="16" fill="url(#tile)"/>
+  <!-- A second note peeking out behind: "shared" -->
+  <rect x="21" y="10" width="28" height="36" rx="5" fill="#ffffff" fill-opacity="0.38" transform="rotate(9 35 28)"/>
+  <!-- The note, with a folded corner -->
+  <path d="M15 17a5 5 0 0 1 5-5h15.5L45 21.5V47a5 5 0 0 1-5 5H20a5 5 0 0 1-5-5z" fill="#ffffff"/>
+  <path d="M35.5 12v6.5a3 3 0 0 0 3 3H45z" fill="#ffd3c4"/>
+  <!-- Text lines -->
+  <rect x="21" y="28" width="17" height="3.4" rx="1.7" fill="#0b1420"/>
+  <rect x="21" y="35" width="12" height="3.4" rx="1.7" fill="#0b1420" fill-opacity="0.35"/>
+  <!-- Live dot: everyone sees edits in real time -->
+  <circle cx="45" cy="46" r="7.5" fill="#0f766e" stroke="#ffffff" stroke-width="3"/>
+</svg>

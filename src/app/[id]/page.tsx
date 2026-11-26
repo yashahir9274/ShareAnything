@@ -1,5 +1,8 @@
 import { Suspense } from "react";
+import { notFound } from "next/navigation";
+import { NoteShell } from "@/components/note-shell";
 import { Notepad } from "@/components/notepad";
+import { isValidNoteId } from "@/lib/note-types";
 
 type NotePageProps = {
   params: Promise<{ id: string }>;
@@ -7,18 +10,10 @@ type NotePageProps = {
 
 async function NoteEditor({ params }: NotePageProps) {
   const { id } = await params;
-  return <Notepad noteId={id} />;
+  if (!isValidNoteId(id)) notFound();
+  return <Notepad key={id} noteId={id} />;
 }
 
-function NoteFallback() {
-  return (
-    <div className="atmosphere flex min-h-dvh items-center justify-center">
-      <p className="font-display text-2xl text-ink-muted animate-soft-pulse">
-        Opening your note…
-      </p>
-    </div>
-  );
-}
 
 export async function generateMetadata({ params }: NotePageProps) {
   const { id } = await params;
@@ -30,7 +25,7 @@ export async function generateMetadata({ params }: NotePageProps) {
 
 export default function NotePage({ params }: NotePageProps) {
   return (
-    <Suspense fallback={<NoteFallback />}>
+    <Suspense fallback={<NoteShell />}>
       <NoteEditor params={params} />
     </Suspense>
   );

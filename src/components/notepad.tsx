@@ -1,259 +1,174 @@
 "use client";
 
-import Link from "next/link";
+import { NewNoteLink } from "@/components/new-note-link";
 import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-import type { Socket } from "socket.io-client";
+import type { Editor } from "@tiptap/react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { CheckIcon, LinkIcon, LockIcon, PlusIcon, TypeIcon } from "@/components/icons";
-import { createNoteId } from "@/lib/id";
-import { createEmptyNote, type Note, type NoteUpdatePayload } from "@/lib/note-types";
-import { countWords, fetchNote, hashPassword } from "@/lib/notes";
-import { createClientId, getSocket } from "@/lib/socket";
+import { MediaManager } from "@/components/media/media-manager";
+import { NoteShell } from "@/components/note-shell";
+import { Brand } from "@/components/logo";
+import { RichTextEditor, type EditorStats } from "@/components/rich-text-editor";
+import { META_FIELD, TITLE_FIELD } from "@/lib/editor-extensions";
+import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
+import { requestNewNoteId } from "@/lib/new-note";
+import { NOTE_LIMITS } from "@/lib/note-types";
+import { useNoteFiles } from "@/lib/use-note-files";
+import { setYText, useNoteSync, useYMapValue, useYText } from "@/lib/use-note-sync";
 
-type SaveState = "connecting" | "syncing" | "live" | "error";
+type View = "document" | "files";
+
+function NavIcon({ view }: { view: View }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {view === "document" ? (
+        <>
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+          <path d="M14 3v5h5M9 13h6M9 17h4" />
+        </>
+      ) : (
+        <>
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <path d="M12 11v5m-2.5-2.5h5" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 type NotepadProps = {
   noteId: string;
 };
 
-const SYNC_DELAY_MS = 450;
-
 export function Notepad({ noteId }: NotepadProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const clientIdRef = useRef(createClientId());
-  const socketRef = useRef<Socket | null>(null);
-  const noteRef = useRef<Note | null>(null);
-  const skipSyncRef = useRef(false);
-  const sessionUnlockedRef = useRef(false);
+  const { doc, access, locked, connected, saveState, saveError, unlock, changePassword } =
+    useNoteSync(noteId);
 
-  const [note, setNote] = useState<Note | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>("connecting");
+  const titleText = doc.getText(TITLE_FIELD);
+  const meta = doc.getMap(META_FIELD);
+  const title = useYText(titleText);
+  const monospace = useYMapValue(meta, "monospace", false);
+
+  const [stats, setStats] = useState<EditorStats>({ words: 0, chars: 0 });
   const [copied, setCopied] = useState(false);
   const [lockOpen, setLockOpen] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [unlockDraft, setUnlockDraft] = useState("");
-  const [locked, setLocked] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [lockError, setLockError] = useState("");
+  // #files in the URL opens the Files tab directly.
+  const [view, setViewState] = useState<View>(() =>
+    typeof window !== "undefined" && window.location.hash === "#files" ? "files" : "document",
+  );
+  const [editor, setEditor] = useState<Editor | null>(null);
+
+  const filesState = useNoteFiles(noteId, access === "open", connected);
+  const { upload } = filesState;
+
+  const setView = useCallback((next: View) => {
+    setViewState(next);
+    const url = next === "files" ? "#files" : window.location.pathname + window.location.search;
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
 
   useEffect(() => {
-    noteRef.current = note;
-  }, [note]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function bootstrap() {
-      try {
-        const loaded = await fetchNote(noteId);
-        if (cancelled) return;
-        sessionUnlockedRef.current = !loaded.passwordHash;
-        setNote(loaded);
-        setLocked(Boolean(loaded.passwordHash));
-      } catch {
-        if (cancelled) return;
-        const fallback = createEmptyNote(noteId);
-        sessionUnlockedRef.current = true;
-        setNote(fallback);
-        setLocked(false);
-      }
+    function onHash() {
+      setViewState(window.location.hash === "#files" ? "files" : "document");
     }
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
-    void bootstrap();
-    return () => {
-      cancelled = true;
-    };
-  }, [noteId]);
+  /** Images/videos added in the editor are stored in the note's Files. */
+  const uploadFromEditor = useCallback(
+    async (file: File) => {
+      const [result] = await upload([{ file, name: file.name || "pasted-image.png" }]);
+      if (!result || result instanceof Error) throw result ?? new Error("Upload failed");
+      return fileRawUrl(result.id);
+    },
+    [upload],
+  );
 
-  useEffect(() => {
-    const socket = getSocket();
-    socketRef.current = socket;
-    setSaveState(socket.connected ? "live" : "connecting");
-
-    function handleConnect() {
-      setSaveState("live");
-      socket.emit("note:join", noteId);
-    }
-
-    function handleDisconnect() {
-      setSaveState("connecting");
-    }
-
-    function applyRemoteNote(remote: Note) {
-      skipSyncRef.current = true;
-      setNote(remote);
-      if (!remote.passwordHash) {
-        sessionUnlockedRef.current = true;
-        setLocked(false);
-      } else if (!sessionUnlockedRef.current) {
-        setLocked(true);
-      }
-      setSaveState("live");
-    }
-
-    function handleState(remote: Note) {
-      applyRemoteNote(remote);
-    }
-
-    function handleSync(payload: NoteUpdatePayload) {
-      if (!payload?.note || payload.clientId === clientIdRef.current) return;
-      applyRemoteNote(payload.note);
-    }
-
-    function handleSaved(remote: Note) {
-      setNote((current) => {
-        if (!current) return remote;
-        if (current.updatedAt === remote.updatedAt) return current;
-        return { ...current, updatedAt: remote.updatedAt };
-      });
-      setSaveState("live");
-    }
-
-    function handleError() {
-      setSaveState("error");
-    }
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("note:state", handleState);
-    socket.on("note:sync", handleSync);
-    socket.on("note:saved", handleSaved);
-    socket.on("note:error", handleError);
-
-    if (socket.connected) {
-      handleConnect();
-    } else {
-      socket.connect();
-    }
-
-    return () => {
-      socket.emit("note:leave", noteId);
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("note:state", handleState);
-      socket.off("note:sync", handleSync);
-      socket.off("note:saved", handleSaved);
-      socket.off("note:error", handleError);
-    };
-  }, [noteId]);
-
-  useEffect(() => {
-    if (!note || locked) return;
-
-    if (skipSyncRef.current) {
-      skipSyncRef.current = false;
-      return;
-    }
-
-    setSaveState("syncing");
-    const timer = window.setTimeout(() => {
-      const latest = noteRef.current;
-      if (!latest) return;
-
-      const payload: NoteUpdatePayload = {
-        clientId: clientIdRef.current,
-        note: {
-          ...latest,
-          updatedAt: new Date().toISOString(),
-        },
-      };
-
-      socketRef.current?.emit("note:update", payload);
-    }, SYNC_DELAY_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [note?.content, note?.title, note?.monospace, note?.passwordHash, locked]);
-
-  useEffect(() => {
-    if (!locked) {
-      const frame = requestAnimationFrame(() => textareaRef.current?.focus());
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [locked, noteId]);
-
-  const stats = useMemo(() => {
-    const content = note?.content ?? "";
-    return {
-      words: countWords(content),
-      chars: content.length,
-    };
-  }, [note?.content]);
-
-  function updateNote(patch: Partial<Note>) {
-    setNote((current) => (current ? { ...current, ...patch } : current));
+  function insertIntoDocument(file: NoteFile) {
+    setView("document");
+    if (!editor) return;
+    const src = fileRawUrl(file.id);
+    const chain = editor.chain().focus();
+    if (file.kind === "image") chain.setImage({ src, alt: file.name }).run();
+    else chain.setVideo({ src }).run();
   }
 
   async function copyShareLink() {
-    const url = `${window.location.origin}/n/${noteId}`;
+    const url = `${window.location.origin}/${noteId}`;
     await navigator.clipboard.writeText(url);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  function createFreshNote() {
-    const nextId = createNoteId();
-    startTransition(() => {
-      router.push(`/n/${nextId}`);
-    });
+  async function createFreshNote() {
+    try {
+      const nextId = await requestNewNoteId();
+      startTransition(() => {
+        router.push(`/${nextId}`);
+      });
+    } catch {
+      // The server redirect on "/" also hands out a unique id.
+      router.push("/");
+    }
   }
 
-  async function applyPassword() {
-    if (!note || !passwordDraft.trim()) return;
-    const passwordHash = await hashPassword(passwordDraft.trim());
-    sessionUnlockedRef.current = false;
-    updateNote({ passwordHash });
+  async function updatePassword(password: string | null) {
+    setPasswordError("");
+    const error = await changePassword(password);
+    if (error) {
+      setPasswordError(error);
+      return;
+    }
     setPasswordDraft("");
     setLockOpen(false);
-    setLocked(true);
+  }
+
+  function applyPassword() {
+    const password = passwordDraft.trim();
+    if (password) void updatePassword(password);
   }
 
   function clearPassword() {
-    sessionUnlockedRef.current = true;
-    updateNote({ passwordHash: null });
-    setLockOpen(false);
-    setLocked(false);
+    void updatePassword(null);
   }
 
   async function attemptUnlock() {
-    if (!note?.passwordHash) return;
-    const attempt = await hashPassword(unlockDraft.trim());
-    if (attempt === note.passwordHash) {
-      sessionUnlockedRef.current = true;
-      setLocked(false);
-      setUnlockDraft("");
-      setLockError("");
+    const password = unlockDraft.trim();
+    if (!password || unlocking) return;
+    setUnlocking(true);
+    const error = await unlock(password);
+    setUnlocking(false);
+    if (error) {
+      setLockError(error);
       return;
     }
-    setLockError("That password doesn’t match.");
+    setUnlockDraft("");
+    setLockError("");
   }
 
-  const statusLabel =
-    saveState === "connecting"
-      ? "Connecting…"
-      : saveState === "syncing"
-        ? "Syncing…"
-        : saveState === "error"
-          ? "Sync offline"
-          : "Live";
+  const statusLabel = !connected
+    ? "Connecting…"
+    : saveState === "syncing"
+      ? "Syncing…"
+      : saveState === "error"
+        ? saveError || "Sync failed"
+        : "Live";
 
-  if (!note) {
+  if (access === "loading") {
     return (
-      <div className="flex min-h-dvh items-center justify-center atmosphere">
-        <p className="font-display text-2xl text-ink-muted animate-soft-pulse">
-          Opening your note…
-        </p>
-      </div>
+      <NoteShell noteId={noteId} status={connected ? "Opening…" : "Connecting…"} />
     );
   }
 
-  if (locked) {
+  if (access === "locked") {
     return (
       <div className="atmosphere flex min-h-dvh items-center justify-center px-6">
         <div className="editor-shell paper-grain w-full max-w-md rounded-[28px] border border-line bg-paper-elevated p-8 animate-fade-up">
@@ -285,40 +200,33 @@ export function Notepad({ noteId }: NotepadProps) {
           <button
             type="button"
             onClick={() => void attemptUnlock()}
+            disabled={unlocking}
             className="mt-5 w-full rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:bg-ink/90"
           >
-            Unlock note
+            {unlocking ? "Checking…" : "Unlock note"}
           </button>
-          <Link
-            href="/"
+          <NewNoteLink
             className="mt-4 block text-center text-sm text-ink-muted transition hover:text-ink"
           >
             Start a new note instead
-          </Link>
+          </NewNoteLink>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="atmosphere relative min-h-dvh">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_top,rgba(255,92,53,0.14),transparent_60%)]" />
+    <div className="app-frame atmosphere relative flex flex-col">
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-5 pb-3 pt-4 sm:px-8 sm:pt-5">
+        <NewNoteLink className="group min-w-0">
+          <Brand tagline="Write together live. Share anything." />
+        </NewNoteLink>
 
-      <header className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-5 pb-3 pt-5 sm:px-8 animate-fade-up">
-        <Link href="/" className="group min-w-0">
-          <p className="font-display text-[1.65rem] leading-none tracking-tight text-ink transition group-hover:text-accent sm:text-[1.85rem]">
-            ShareAnything
-          </p>
-          <p className="mt-1 truncate text-xs text-ink-muted sm:text-sm">
-            Live shared notes over sockets.
-          </p>
-        </Link>
-
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <button
             type="button"
-            onClick={createFreshNote}
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white/70 px-3 text-sm font-medium text-ink backdrop-blur transition hover:border-ink/20 hover:bg-white"
+            onClick={() => void createFreshNote()}
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white/85 px-3 text-sm font-medium text-ink transition hover:border-ink/20 hover:bg-white"
             aria-label="New note"
           >
             <PlusIcon className="h-4 w-4" />
@@ -327,32 +235,33 @@ export function Notepad({ noteId }: NotepadProps) {
           <button
             type="button"
             onClick={() => setLockOpen((open) => !open)}
-            className={`inline-flex h-10 items-center gap-2 rounded-full border px-3 text-sm font-medium backdrop-blur transition ${
-              note.passwordHash
+            className={`inline-flex h-10 items-center gap-2 rounded-full border px-3 text-sm font-medium transition ${
+              locked
                 ? "border-teal/30 bg-teal-soft text-teal"
-                : "border-line bg-white/70 text-ink hover:border-ink/20 hover:bg-white"
+                : "border-line bg-white/85 text-ink hover:border-ink/20 hover:bg-white"
             }`}
             aria-label="Password protect"
           >
             <LockIcon className="h-4 w-4" />
             <span className="hidden sm:inline">
-              {note.passwordHash ? "Locked" : "Protect"}
+              {locked ? "Locked" : "Protect"}
             </span>
           </button>
           <button
             type="button"
             onClick={() => void copyShareLink()}
-            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,92,53,0.28)] transition hover:brightness-105"
+            aria-label="Copy share link"
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-3 text-sm sm:px-4 font-semibold text-white shadow-[0_10px_24px_rgba(255,92,53,0.28)] transition hover:brightness-105"
           >
             {copied ? <CheckIcon className="h-4 w-4" /> : <LinkIcon className="h-4 w-4" />}
-            <span>{copied ? "Copied" : "Share"}</span>
+            <span className="hidden min-[400px]:inline">{copied ? "Copied" : "Share"}</span>
           </button>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto w-full max-w-5xl px-5 pb-8 sm:px-8 animate-fade-up-delay">
+      <main className="relative z-10 mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-3 pb-3 sm:px-8 sm:pb-4">
         {lockOpen ? (
-          <div className="mb-4 rounded-[24px] border border-line bg-white/80 p-4 backdrop-blur sm:p-5">
+          <div className="mb-3 shrink-0 rounded-[24px] border border-line bg-white/95 p-4 sm:p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="flex-1 text-xs font-medium uppercase tracking-[0.14em] text-ink-muted">
                 Set a password
@@ -367,12 +276,12 @@ export function Notepad({ noteId }: NotepadProps) {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => void applyPassword()}
+                  onClick={applyPassword}
                   className="rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white"
                 >
                   Save lock
                 </button>
-                {note.passwordHash ? (
+                {locked ? (
                   <button
                     type="button"
                     onClick={clearPassword}
@@ -383,19 +292,82 @@ export function Notepad({ noteId }: NotepadProps) {
                 ) : null}
               </div>
             </div>
+            {passwordError ? (
+              <p className="mt-2 text-sm text-danger">{passwordError}</p>
+            ) : null}
           </div>
         ) : null}
 
-        <section className="editor-shell paper-grain overflow-hidden rounded-[28px] border border-line bg-paper-elevated">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/80 px-5 py-3 sm:px-7">
+        <div className="flex min-h-0 flex-1 flex-col gap-2.5 md:flex-row md:gap-4">
+        <nav
+          aria-label="Note sections"
+          className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-white/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
+        >
+          {(
+            [
+              { id: "document", label: "Document", hint: "Write together" },
+              { id: "files", label: "Files", hint: "Share anything" },
+            ] as const
+          ).map((item) => {
+            const selected = view === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setView(item.id)}
+                aria-current={selected ? "page" : undefined}
+                className={`flex flex-1 items-center gap-2.5 rounded-2xl px-3 py-2 text-left transition md:flex-none md:py-2.5 ${
+                  selected ? "bg-ink text-white shadow-sm" : "text-ink-muted hover:bg-paper hover:text-ink"
+                }`}
+              >
+                <NavIcon view={item.id} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{item.label}</span>
+                  <span className={`hidden text-[11px] md:block ${selected ? "text-white/60" : "text-ink/40"}`}>
+                    {item.hint}
+                  </span>
+                </span>
+                {item.id === "files" && filesState.files.length ? (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+                      selected ? "bg-white/15 text-white" : "bg-accent-soft text-accent"
+                    }`}
+                  >
+                    {filesState.files.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+
+          {filesState.usage ? (
+            <div className="mt-auto hidden rounded-2xl bg-paper px-3 py-2.5 md:block">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">Storage</p>
+              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-line">
+                <span
+                  className="block h-full rounded-full bg-teal"
+                  style={{
+                    width: `${Math.min(100, Math.max(filesState.usage.used ? 1 : 0, (filesState.usage.used / filesState.usage.quota) * 100))}%`,
+                  }}
+                />
+              </span>
+              <p className="mt-1.5 text-[11px] tabular-nums text-ink-muted">
+                {formatBytes(filesState.usage.used)} of {formatBytes(filesState.usage.quota)}
+              </p>
+            </div>
+          ) : null}
+        </nav>
+
+        <section className="editor-shell paper-grain flex min-h-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-line bg-paper-elevated sm:rounded-[28px]">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line/80 px-4 py-2.5 sm:px-7 sm:py-3">
             <div className="flex items-center gap-3 text-sm text-ink-muted">
               <span className="rounded-full bg-white px-3 py-1 font-mono text-xs text-ink">
-                /n/{noteId}
+                /{noteId}
               </span>
               <span className="inline-flex items-center gap-2">
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    saveState === "syncing" || saveState === "connecting"
+                    !connected || saveState === "syncing"
                       ? "bg-accent animate-soft-pulse"
                       : saveState === "error"
                         ? "bg-danger"
@@ -406,12 +378,12 @@ export function Notepad({ noteId }: NotepadProps) {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className={view === "document" ? "flex items-center gap-2" : "hidden"}>
               <button
                 type="button"
-                onClick={() => updateNote({ monospace: !note.monospace })}
+                onClick={() => meta.set("monospace", !monospace)}
                 className={`inline-flex h-9 items-center gap-2 rounded-full px-3 text-xs font-medium transition ${
-                  note.monospace
+                  monospace
                     ? "bg-ink text-white"
                     : "bg-white text-ink-muted hover:text-ink"
                 }`}
@@ -425,32 +397,52 @@ export function Notepad({ noteId }: NotepadProps) {
             </div>
           </div>
 
-          <div className="px-5 pt-5 sm:px-7 sm:pt-7">
+          {/* The document stays mounted while Files is open, so the editor keeps its state. */}
+          <div className={view === "document" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          <div className="shrink-0 px-4 pt-3 sm:px-7 sm:pt-5">
             <input
-              value={note.title}
-              onChange={(event) => updateNote({ title: event.target.value })}
+              value={title}
+              maxLength={NOTE_LIMITS.titleMax}
+              onChange={(event) => setYText(titleText, event.target.value)}
               placeholder="Untitled note"
-              className="w-full border-none bg-transparent font-display text-3xl tracking-tight text-ink placeholder:text-ink/25 outline-none sm:text-4xl"
+              className="w-full border-none bg-transparent font-display text-2xl tracking-tight text-ink placeholder:text-ink/25 outline-none sm:text-4xl"
             />
           </div>
 
-          <textarea
-            ref={textareaRef}
-            value={note.content}
-            onChange={(event) => updateNote({ content: event.target.value })}
-            placeholder="Start typing. Open the same link in another browser — updates appear after a short delay."
-            spellCheck
-            className={`editor-textarea w-full border-none bg-transparent px-5 pb-8 pt-4 text-[1.05rem] leading-8 text-ink placeholder:text-ink/30 sm:px-7 sm:text-[1.125rem] sm:leading-8 ${
-              note.monospace ? "font-mono text-[0.98rem] leading-7" : "font-sans"
-            }`}
+          <RichTextEditor
+            key={doc.guid}
+            doc={doc}
+            monospace={monospace}
+            onStats={setStats}
+            uploadFile={uploadFromEditor}
+            onEditorReady={setEditor}
           />
-        </section>
+          </div>
 
-        <footer className="mt-4 flex flex-col gap-2 px-1 text-sm text-ink-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            Shared live over sockets. Changes sync about {SYNC_DELAY_MS}ms after you pause typing.
+          {view === "files" ? (
+            <MediaManager
+              files={filesState.files}
+              usage={filesState.usage}
+              loaded={filesState.loaded}
+              uploads={filesState.uploads}
+              active={view === "files"}
+              onUpload={filesState.upload}
+              onDismissUpload={filesState.dismissUpload}
+              onDelete={filesState.remove}
+              onRename={filesState.rename}
+              onInsert={insertIntoDocument}
+            />
+          ) : null}
+        </section>
+        </div>
+
+        <footer className="mt-2 flex shrink-0 items-center justify-between gap-2 px-1 text-xs text-ink/75 sm:mt-3 sm:text-sm">
+          <p className="truncate">
+            {view === "files"
+              ? "Files are shared with everyone who has this note’s link — each file also has its own link."
+              : "Everyone with the link edits together live; simultaneous changes merge."}
           </p>
-          <p className="sm:hidden">
+          <p className={view === "document" ? "shrink-0 sm:hidden" : "hidden"}>
             {stats.words} words · {stats.chars} chars
           </p>
         </footer>

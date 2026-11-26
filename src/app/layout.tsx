@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { DialogProvider } from "@/components/dialogs";
+import { SceneBackground } from "@/components/scene-background";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -20,11 +22,32 @@ const plexMono = IBM_Plex_Mono({
   weight: ["400", "500"],
 });
 
+const description =
+  "Instant shared notes and files. Write together live, share anything with a link, and lock it with a password.";
+
 export const metadata: Metadata = {
-  title: "ShareAnything — Instant shared notes",
-  description:
-    "A modern napkin for the internet. Open a blank note, write instantly, share with a link, and lock it with a password.",
+  // Absolute URLs for link previews; set PUBLIC_URL to your domain in production.
+  metadataBase: new URL(process.env.PUBLIC_URL || "http://localhost:3000"),
+  title: "ShareAnything — Instant shared notes & files",
+  description,
   applicationName: "ShareAnything",
+  openGraph: {
+    type: "website",
+    siteName: "ShareAnything",
+    title: "ShareAnything — Instant shared notes & files",
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ShareAnything — Instant shared notes & files",
+    description,
+  },
+  // Notes and files are private-by-link; keep them out of search engines.
+  robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ff5c35",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -32,9 +55,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${jakarta.variable} ${fraunces.variable} ${plexMono.variable} h-full antialiased`}
+      // Browser extensions (e.g. ColorZilla's cz-shortcut-listen, Grammarly) add attributes
+      // to <html>/<body> before React hydrates. This only ignores attribute differences on
+      // these two elements, not their children.
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col font-sans text-ink">
-        {children}
+      <body className="min-h-full flex flex-col font-sans text-ink" suppressHydrationWarning>
+        <SceneBackground />
+        <DialogProvider>{children}</DialogProvider>
       </body>
     </html>
   );

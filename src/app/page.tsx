@@ -1,26 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { createNoteId } from "@/lib/id";
+import { NoteShell } from "@/components/note-shell";
+import { requestNewNoteId } from "@/lib/new-note";
 
+/**
+ * Normally never rendered: the server answers "/" with a redirect to a fresh,
+ * unused note id (server/new-note-http.ts). This is only a fallback, and it
+ * still gets its id from the server.
+ */
 export default function Home() {
-  const router = useRouter();
-
   useEffect(() => {
-    router.replace(`/n/${createNoteId()}`);
-  }, [router]);
+    requestNewNoteId()
+      .then((id) => window.location.replace(`/${id}`))
+      .catch(() => {});
+  }, []);
 
-  return (
-    <div className="atmosphere flex min-h-dvh items-center justify-center px-6">
-      <div className="text-center animate-fade-up">
-        <p className="font-display text-4xl tracking-tight text-ink sm:text-5xl">
-          ShareAnything
-        </p>
-        <p className="mt-3 text-sm text-ink-muted animate-soft-pulse">
-          Opening a fresh note…
-        </p>
-      </div>
-    </div>
-  );
+  return <NoteShell />;
 }

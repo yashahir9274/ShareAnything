@@ -17,3 +17,10 @@
 #   proxy_set_header X-Forwarded-Proto $scheme;
 #   proxy_read_timeout 86400;
 # }
+
+# Uploads: files can be up to 100 MB (SHAREANYTHING_MAX_FILE_MB). Make sure the
+# site's nginx allows that, or big uploads fail with 413 before reaching the app.
+# In CloudPanel → Site → Vhost, inside the server { } block:
+#
+# client_max_body_size 110m;
+# proxy_request_buffering off;   # stream uploads straight to the app

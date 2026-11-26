@@ -2,6 +2,7 @@
 
 import { NewNoteLink } from "@/components/new-note-link";
 import { Brand } from "@/components/logo";
+import { ThemeMenu } from "@/components/theme-menu";
 import { useEffect, useState } from "react";
 import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
 import { kindLabel } from "./file-icon";
@@ -36,15 +37,18 @@ export function SharedFileView({ fileId }: { fileId: string }) {
 
   return (
     <div className="app-frame atmosphere relative flex flex-col">
-      <header className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-5 pb-3 pt-4 sm:px-8 sm:pt-5 animate-fade-up">
+      <header className="relative z-30 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-5 pb-3 pt-4 sm:px-8 sm:pt-5 animate-fade-up">
         <NewNoteLink className="group min-w-0">
           <Brand tagline="A file was shared with you." />
         </NewNoteLink>
+        <div className="flex shrink-0 items-center gap-2">
+        <ThemeMenu />
         <NewNoteLink
-          className="inline-flex h-10 shrink-0 items-center rounded-full border border-line bg-white/85 px-4 text-sm font-medium text-ink transition hover:border-ink/20 hover:bg-white"
+          className="inline-flex h-10 shrink-0 items-center rounded-full border border-line bg-surface/85 px-4 text-sm font-medium text-ink transition hover:border-ink/20 hover:bg-surface"
         >
           Share your own
         </NewNoteLink>
+        </div>
       </header>
 
       <main className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-3 pb-3 sm:px-8 sm:pb-4 animate-fade-up-delay">
@@ -74,7 +78,7 @@ export function SharedFileView({ fileId }: { fileId: string }) {
                   <button
                     type="button"
                     onClick={() => setShareOpen(true)}
-                    className="inline-flex h-10 items-center rounded-full border border-line bg-white px-4 text-sm font-medium text-ink transition hover:border-ink/20"
+                    className="inline-flex h-10 items-center rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink transition hover:border-ink/20"
                   >
                     Share
                   </button>

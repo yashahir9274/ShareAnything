@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import { DialogProvider } from "@/components/dialogs";
 import { SceneBackground } from "@/components/scene-background";
+import { ThemeWatcher } from "@/components/theme-watcher";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme-boot";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -60,7 +62,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       // these two elements, not their children.
       suppressHydrationWarning
     >
+      <head>
+        {/* Apply the saved/system theme before first paint (no flash). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col font-sans text-ink" suppressHydrationWarning>
+        <ThemeWatcher />
         <SceneBackground />
         <DialogProvider>{children}</DialogProvider>
       </body>

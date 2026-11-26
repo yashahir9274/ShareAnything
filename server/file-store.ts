@@ -24,8 +24,8 @@ export const FILE_LIMITS = {
 const FILES_DIR = path.join(process.cwd(), ".data", "files");
 const MANIFEST_DIR = path.join(process.cwd(), ".data", "notes");
 
-/** What the server keeps per file (noteId is never sent to public viewers). */
-export type StoredFile = NoteFile & { noteId: string };
+/** What the server keeps per file (noteId and uploaderId are never sent to viewers). */
+export type StoredFile = NoteFile & { noteId: string; uploaderId?: string };
 
 export const fileEvents = new EventEmitter();
 function emit(event: FileEvent) {
@@ -53,6 +53,7 @@ function toPublic(file: StoredFile): NoteFile {
     size: file.size,
     kind: file.kind,
     createdAt: file.createdAt,
+    ...(file.uploadedBy ? { uploadedBy: file.uploadedBy } : {}),
   };
 }
 
@@ -146,6 +147,9 @@ export async function saveUpload(input: {
   mime: string;
   declaredSize: number;
   body: Readable;
+  uploader?: { id: string; name: string } | null;
+  /** Sent as a chat attachment (the chat message notifies people, not the upload). */
+  viaChat?: boolean;
 }): Promise<NoteFile> {
   const { noteId, body } = input;
   const name = cleanFileName(input.name);
@@ -193,6 +197,7 @@ export async function saveUpload(input: {
     size,
     kind: detectFileKind(name, mime),
     createdAt: new Date().toISOString(),
+    ...(input.uploader ? { uploadedBy: input.uploader.name, uploaderId: input.uploader.id } : {}),
   };
 
   return withLock(noteId, async () => {
@@ -207,7 +212,14 @@ export async function saveUpload(input: {
     await writeJson(metaPath(id), record);
     const next = [...files, record];
     await saveManifest(noteId, next);
-    emit({ noteId, type: "added", file: toPublic(record), usage: usageOf(next) });
+    emit({
+      noteId,
+      type: "added",
+      file: toPublic(record),
+      usage: usageOf(next),
+      uploaderId: record.uploaderId,
+      ...(input.viaChat ? { viaChat: true } : {}),
+    });
     return toPublic(record);
   });
 }

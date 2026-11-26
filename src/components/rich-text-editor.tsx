@@ -101,8 +101,8 @@ function ToolbarButton({
       }}
       className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold transition disabled:opacity-35 ${
         active
-          ? "bg-ink text-white"
-          : "bg-transparent text-ink-muted hover:bg-white hover:text-ink"
+          ? "bg-strong text-on-strong"
+          : "bg-transparent text-ink-muted hover:bg-surface hover:text-ink"
       }`}
     >
       {children}
@@ -134,7 +134,7 @@ function ToolbarSelect({
         value={value}
         onMouseDown={(event) => event.stopPropagation()}
         onChange={(event) => onChange(event.target.value)}
-        className={`h-8 rounded-lg border border-line bg-white px-2 text-xs text-ink outline-none transition focus:border-accent ${className}`}
+        className={`h-8 rounded-lg border border-line bg-surface px-2 text-xs text-ink outline-none transition focus:border-accent ${className}`}
       >
         {children}
       </select>
@@ -156,7 +156,7 @@ function ColorSwatch({
   onClear: () => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-line bg-white px-1.5 py-1">
+    <div className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-1.5 py-1">
       <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
         {label}
       </span>

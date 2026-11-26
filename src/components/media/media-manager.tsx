@@ -41,7 +41,10 @@ export type MediaManagerProps = {
   loaded: boolean;
   uploads: UploadItem[];
   active: boolean;
-  onUpload: (input: Array<{ file: File | Blob; name: string }>) => Promise<Array<NoteFile | Error>>;
+  onUpload: (
+    input: Array<{ file: File | Blob; name: string }>,
+    options?: { source?: "chat" },
+  ) => Promise<Array<NoteFile | Error>>;
   onDismissUpload: (key: string) => void;
   onDelete: (fileId: string) => Promise<string | null>;
   onRename: (fileId: string, name: string) => Promise<string | null>;
@@ -73,8 +76,8 @@ function IconButton({
   children: React.ReactNode;
   tone?: "default" | "danger";
 }) {
-  const className = `flex h-8 w-8 items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 ring-line transition ${
-    tone === "danger" ? "text-danger hover:bg-[#fee2e2]" : "text-ink hover:bg-white hover:text-accent"
+  const className = `flex h-8 w-8 items-center justify-center rounded-full bg-surface/95 shadow-sm ring-1 ring-line transition ${
+    tone === "danger" ? "text-danger hover:bg-danger/10" : "text-ink hover:bg-surface hover:text-accent"
   }`;
   const icon = (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -303,7 +306,7 @@ export function MediaManager({
             <button
               type="button"
               onClick={() => setSnippetOpen(true)}
-              className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white px-3.5 text-sm font-medium text-ink transition hover:border-ink/20"
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-sm font-medium text-ink transition hover:border-ink/20"
             >
               <span className="font-mono text-xs">{"</>"}</span>
               <span className="hidden sm:inline">New snippet</span>
@@ -329,11 +332,11 @@ export function MediaManager({
                 type="button"
                 onClick={() => setFilter(entry.id)}
                 className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition ${
-                  filter === entry.id ? "bg-ink text-white" : "bg-white text-ink-muted hover:text-ink"
+                  filter === entry.id ? "bg-strong text-on-strong" : "bg-surface text-ink-muted hover:text-ink"
                 }`}
               >
                 {entry.label}
-                <span className={filter === entry.id ? "text-white/60" : "text-ink/30"}>{counts[entry.id]}</span>
+                <span className={filter === entry.id ? "text-on-strong/60" : "text-ink/30"}>{counts[entry.id]}</span>
               </button>
             ))}
           </div>
@@ -343,9 +346,9 @@ export function MediaManager({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search files"
-              className="h-8 min-w-0 flex-1 rounded-full border border-line bg-white px-3 text-xs text-ink outline-none transition focus:border-accent sm:w-44 sm:flex-none sm:focus:w-52"
+              className="h-8 min-w-0 flex-1 rounded-full border border-line bg-surface px-3 text-xs text-ink outline-none transition focus:border-accent sm:w-44 sm:flex-none sm:focus:w-52"
             />
-            <div className="flex rounded-full bg-white p-0.5 ring-1 ring-line">
+            <div className="flex rounded-full bg-surface p-0.5 ring-1 ring-line">
               {(["grid", "list"] as const).map((mode) => (
                 <button
                   key={mode}
@@ -353,7 +356,7 @@ export function MediaManager({
                   onClick={() => setView(mode)}
                   aria-pressed={view === mode}
                   className={`h-7 rounded-full px-2.5 text-xs font-medium capitalize transition ${
-                    view === mode ? "bg-ink text-white" : "text-ink-muted hover:text-ink"
+                    view === mode ? "bg-strong text-on-strong" : "text-ink-muted hover:text-ink"
                   }`}
                 >
                   {mode}
@@ -399,7 +402,7 @@ export function MediaManager({
       ) : null}
 
       {error ? (
-        <div className="shrink-0 border-b border-line/80 bg-[#fee2e2]/60 px-4 py-2 text-xs text-danger sm:px-6">
+        <div className="shrink-0 border-b border-line/80 bg-danger/10 px-4 py-2 text-xs text-danger sm:px-6">
           {error}{" "}
           <button type="button" className="underline" onClick={() => setError("")}>
             Dismiss
@@ -415,7 +418,7 @@ export function MediaManager({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex h-full min-h-56 w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-line bg-white/60 p-8 text-center transition hover:border-accent/50 hover:bg-white"
+            className="flex h-full min-h-56 w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-line bg-surface/60 p-8 text-center transition hover:border-accent/50 hover:bg-surface"
           >
             <span className="flex gap-2">
               <FileIcon kind="code" name="app.tsx" className="h-14 w-14 -rotate-6" />
@@ -441,12 +444,12 @@ export function MediaManager({
                   onKeyDown={(event) => {
                     if (event.key === "Enter") setPreviewId(file.id);
                   }}
-                  className="group relative block w-full cursor-pointer overflow-hidden rounded-2xl border border-line bg-white text-left shadow-[0_1px_0_rgba(11,20,32,0.03)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(11,20,32,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="group relative block w-full cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface text-left shadow-[0_1px_0_rgba(11,20,32,0.03)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(11,20,32,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <FileThumb file={file} />
                     <span className="hover-reveal hover-overlay pointer-events-none absolute inset-0 flex items-center justify-center pb-8">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-ink shadow-md">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-surface/95 px-3 py-1.5 text-xs font-semibold text-ink shadow-md">
                         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                           {ICONS.view}
                         </svg>
@@ -460,10 +463,11 @@ export function MediaManager({
                     </p>
                     <p className="text-[11px] text-ink-muted">
                       {kindLabel(file.kind)} · {formatBytes(file.size)} · {timeAgo(file.createdAt)}
+                      {file.uploadedBy ? ` · by ${file.uploadedBy}` : ""}
                     </p>
                   </div>
                   {/* One row along the bottom of the thumbnail, shown on hover (always on touch screens). */}
-                  <div className="hover-reveal absolute inset-x-0 top-0 flex aspect-[4/3] items-end justify-center gap-1 bg-gradient-to-t from-ink/55 via-transparent to-transparent p-2">
+                  <div className="hover-reveal absolute inset-x-0 top-0 flex aspect-[4/3] items-end justify-center gap-1 bg-gradient-to-t from-black/55 via-transparent to-transparent p-2">
                     {actionsFor(file, false, true)}
                   </div>
                 </div>
@@ -471,7 +475,7 @@ export function MediaManager({
             ))}
           </ul>
         ) : (
-          <ul className="divide-y divide-line/80 overflow-hidden rounded-2xl border border-line bg-white">
+          <ul className="divide-y divide-line/80 overflow-hidden rounded-2xl border border-line bg-surface">
             {visible.map((file) => (
               <li
                 key={file.id}
@@ -489,6 +493,7 @@ export function MediaManager({
                   <p className="truncate text-sm font-medium text-ink">{file.name}</p>
                   <p className="text-[11px] text-ink-muted">
                     {kindLabel(file.kind)} · {formatBytes(file.size)} · {timeAgo(file.createdAt)}
+                      {file.uploadedBy ? ` · by ${file.uploadedBy}` : ""}
                   </p>
                 </div>
                 <div className="hover-reveal flex shrink-0 gap-1">{actionsFor(file)}</div>
@@ -514,7 +519,7 @@ export function MediaManager({
       ) : null}
 
       {dragging ? (
-        <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-accent bg-white/90">
+        <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-accent bg-surface/90">
           <p className="font-display text-2xl text-ink">Drop to upload</p>
           <p className="text-sm text-ink-muted">Files are shared with everyone who has this note’s link.</p>
         </div>
@@ -585,13 +590,13 @@ function SnippetDialog({
           <input
             value={base}
             onChange={(event) => setBase(event.target.value.replace(/[\\/]/g, ""))}
-            className="min-w-0 flex-1 rounded-2xl border border-line bg-white px-4 py-2.5 font-mono text-sm text-ink outline-none focus:border-accent"
+            className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-4 py-2.5 font-mono text-sm text-ink outline-none focus:border-accent"
             aria-label="File name"
           />
           <select
             value={ext}
             onChange={(event) => setExt(event.target.value)}
-            className="rounded-2xl border border-line bg-white px-3 text-sm text-ink outline-none focus:border-accent"
+            className="rounded-2xl border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-accent"
             aria-label="Language"
           >
             {SNIPPET_LANGUAGES.map(([value, label]) => (

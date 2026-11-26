@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatBytes, type FileEvent, type FilesUsage, type NoteFile } from "@/lib/files";
 import { getSocket } from "@/lib/socket";
+import { getIdentity } from "@/lib/identity";
 import { readToken } from "@/lib/use-note-sync";
 
 export type UploadItem = {
@@ -22,6 +23,7 @@ export function uploadNoteFile(
   file: File | Blob,
   name: string,
   onProgress?: (loaded: number) => void,
+  source?: "chat",
 ): Promise<NoteFile> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -30,6 +32,11 @@ export function uploadNoteFile(
     xhr.setRequestHeader("X-File-Name", encodeURIComponent(name));
     const token = readToken(noteId);
     if (token) xhr.setRequestHeader("X-Note-Token", token);
+    // Lets others see who shared it ("Yash shared a file").
+    const me = getIdentity();
+    xhr.setRequestHeader("X-User-Id", me.id);
+    xhr.setRequestHeader("X-User-Name", encodeURIComponent(me.name));
+    if (source) xhr.setRequestHeader("X-Upload-Source", source);
     xhr.upload.onprogress = (event) => onProgress?.(event.loaded);
     xhr.onload = () => {
       let body: { error?: string } & Partial<NoteFile> = {};
@@ -47,7 +54,17 @@ export function uploadNoteFile(
 }
 
 /** Live list of a note's files, kept in sync for everyone viewing the note. */
-export function useNoteFiles(noteId: string, enabled: boolean, connected: boolean) {
+export function useNoteFiles(
+  noteId: string,
+  enabled: boolean,
+  connected: boolean,
+  /** Called when someone else adds a file (for notifications). viaChat: sent as a chat attachment. */
+  onOthersUpload?: (file: NoteFile, viaChat: boolean) => void,
+) {
+  const onOthersUploadRef = useRef(onOthersUpload);
+  useEffect(() => {
+    onOthersUploadRef.current = onOthersUpload;
+  }, [onOthersUpload]);
   const [files, setFiles] = useState<NoteFile[]>([]);
   const [usage, setUsage] = useState<FilesUsage | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -77,6 +94,7 @@ export function useNoteFiles(noteId: string, enabled: boolean, connected: boolea
     function handleEvent(event: FileEvent) {
       if (event.noteId !== noteId) return;
       if (event.type === "added") {
+        if (event.uploaderId !== getIdentity().id) onOthersUploadRef.current?.(event.file, Boolean(event.viaChat));
         setFiles((current) =>
           current.some((file) => file.id === event.file.id) ? current : [event.file, ...current],
         );
@@ -105,7 +123,10 @@ export function useNoteFiles(noteId: string, enabled: boolean, connected: boolea
    * Error explaining why that file wasn't stored.
    */
   const upload = useCallback(
-    async (input: Array<{ file: File | Blob; name: string }>): Promise<Array<NoteFile | Error>> => {
+    async (
+      input: Array<{ file: File | Blob; name: string }>,
+      options: { source?: "chat" } = {},
+    ): Promise<Array<NoteFile | Error>> => {
       // Check limits up front so an oversized file fails instantly with a clear reason
       // instead of after sending it all.
       const limits = usageRef.current;
@@ -139,8 +160,12 @@ export function useNoteFiles(noteId: string, enabled: boolean, connected: boolea
           const index = queue[next++];
           const item = items[index];
           try {
-            const stored = await uploadNoteFile(noteId, input[index].file, input[index].name, (bytes) =>
-              patchUpload(item.key, { loaded: bytes }),
+            const stored = await uploadNoteFile(
+              noteId,
+              input[index].file,
+              input[index].name,
+              (bytes) => patchUpload(item.key, { loaded: bytes }),
+              options.source,
             );
             results[index] = stored;
             patchUpload(item.key, { status: "done", loaded: item.size });

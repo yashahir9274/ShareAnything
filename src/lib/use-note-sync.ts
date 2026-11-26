@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import * as Y from "yjs";
 import type {
   JoinResult,
+  LockStateEvent,
+  LockedEvent,
   NoteSnapshot,
   SetPasswordResult,
   UnlockResult,
@@ -16,7 +18,7 @@ export type Access = "loading" | "locked" | "open";
 export type SaveState = "saved" | "syncing" | "error";
 
 /** Transaction origin for changes that came from the server, so they aren't echoed back. */
-const REMOTE = Symbol("remote");
+export const REMOTE = Symbol("remote");
 const SEND_DELAY_MS = 60;
 
 function tokenKey(noteId: string) {
@@ -54,6 +56,10 @@ export function useNoteSync(noteId: string) {
   const [doc, setDoc] = useState(() => new Y.Doc());
   const [access, setAccessState] = useState<Access>("loading");
   const [locked, setLocked] = useState(false);
+  /** "Lock again after" time in minutes (null = never). */
+  const [relockMinutes, setRelockMinutes] = useState<number | null>(null);
+  /** Why the lock screen is showing: someone set a new password, or your unlock expired. */
+  const [lockReason, setLockReason] = useState<"password-set" | "expired" | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [saveError, setSaveError] = useState("");
 
@@ -140,6 +146,8 @@ export function useNoteSync(noteId: string) {
       const missing = Y.encodeStateAsUpdate(doc, bytes(snapshot.stateVector));
       queueRef.current = missing.byteLength > 2 ? [missing] : [];
       setLocked(snapshot.locked);
+      setRelockMinutes(snapshot.relockMinutes ?? null);
+      setLockReason(null);
       setAccess("open");
       flush();
     },
@@ -178,12 +186,15 @@ export function useNoteSync(noteId: string) {
       }
     }
 
-    function handleLockState(payload: { noteId: string; locked: boolean }) {
-      if (payload.noteId === noteId) setLocked(payload.locked);
+    function handleLockState(payload: LockStateEvent) {
+      if (payload.noteId !== noteId) return;
+      setLocked(payload.locked);
+      setRelockMinutes(payload.relockMinutes ?? null);
     }
 
-    function handleLocked(payload: { noteId: string }) {
+    function handleLocked(payload: LockedEvent) {
       if (payload.noteId !== noteId) return;
+      setLockReason(payload.reason ?? null);
       writeToken(noteId, null);
       queueRef.current = [];
       setAccess("locked");
@@ -223,14 +234,24 @@ export function useNoteSync(noteId: string) {
   );
 
   /** Sets (or with null, removes) the note password. Resolves to an error message or null. */
+  /**
+   * password: string = set a new one, null = remove protection,
+   * undefined = keep the current password and only change the re-lock time.
+   */
   const changePassword = useCallback(
-    (password: string | null) => {
+    (password: string | null | undefined, relock: number | null = null) => {
       flush();
       return new Promise<string | null>((resolve) => {
-        getSocket().emit("note:set-password", { noteId, password }, (result: SetPasswordResult) => {
+        const payload = {
+          noteId,
+          relockMinutes: password === null ? null : relock,
+          ...(password === undefined ? {} : { password }),
+        };
+        getSocket().emit("note:set-password", payload, (result: SetPasswordResult) => {
           if (!result.ok) return resolve(result.error);
           writeToken(noteId, result.token || null);
           setLocked(password !== null);
+          setRelockMinutes(password === null ? null : relock);
           resolve(null);
         });
       });
@@ -238,7 +259,7 @@ export function useNoteSync(noteId: string) {
     [noteId, flush],
   );
 
-  return { doc, access, locked, connected, saveState, saveError, unlock, changePassword };
+  return { doc, access, locked, relockMinutes, lockReason, connected, saveState, saveError, unlock, changePassword };
 }
 
 /** Current string value of a Y.Text, re-rendering on changes. */

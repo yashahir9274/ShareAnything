@@ -2,6 +2,7 @@ import { createReadStream, promises as fs } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isValidFileId, type FileKind } from "../src/lib/files";
 import { isValidNoteId } from "../src/lib/note-types";
+import { cleanUser } from "../src/lib/chat";
 import { FileError, fileBlobPath, getFile, saveUpload } from "./file-store";
 import { checkNoteAccess } from "./note-store";
 
@@ -61,9 +62,23 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse, noteId: s
   } catch {
     // keep default
   }
+  // Who uploaded it (the name they chose for chat); optional and cleaned like chat names.
+  let uploader: { id: string; name: string } | null = null;
+  try {
+    const user = cleanUser({
+      id: String(req.headers["x-user-id"] ?? ""),
+      name: decodeURIComponent(String(req.headers["x-user-name"] ?? "")),
+    });
+    if (user) uploader = { id: user.id, name: user.name };
+  } catch {
+    // bad encoding: upload anonymously
+  }
+
   try {
     const file = await saveUpload({
       noteId,
+      uploader,
+      viaChat: req.headers["x-upload-source"] === "chat",
       name,
       mime: String(req.headers["content-type"] ?? ""),
       declaredSize: Number(req.headers["content-length"] ?? 0),
@@ -83,8 +98,8 @@ async function handleMeta(res: ServerResponse, fileId: string) {
   const file = await getFile(fileId);
   if (!file) return sendJson(res, 404, { error: "File not found" });
   // Never reveal which note a file belongs to: the note link would open the note.
-  const { id, name, mime, size, kind, createdAt } = file;
-  sendJson(res, 200, { id, name, mime, size, kind, createdAt });
+  const { id, name, mime, size, kind, createdAt, uploadedBy } = file;
+  sendJson(res, 200, { id, name, mime, size, kind, createdAt, ...(uploadedBy ? { uploadedBy } : {}) });
 }
 
 async function handleRaw(req: IncomingMessage, res: ServerResponse, fileId: string, download: boolean) {

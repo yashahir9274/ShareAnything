@@ -20,6 +20,8 @@ const PALETTE = {
   paper: "#ffffff",
   muted: "#c9d2dc",
   fog: 0xbec8d2,
+  fogDark: 0x0b1118,
+  lineDark: "#9aa7b6",
 };
 
 type CardKind = "text" | "image" | "video" | "link";
@@ -211,7 +213,9 @@ export function createShareNetworkScene(host: HTMLElement, onReady?: () => void)
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(PALETTE.fog, 13, 34);
+  const isDark = () => document.documentElement.dataset.theme === "dark";
+  const fog = new THREE.Fog(isDark() ? PALETTE.fogDark : PALETTE.fog, 13, 34);
+  scene.fog = fog;
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 60);
   camera.position.set(0, 0, 12);
   const world = new THREE.Group();
@@ -286,7 +290,7 @@ export function createShareNetworkScene(host: HTMLElement, onReady?: () => void)
     new THREE.BufferAttribute(linePositions, 3).setUsage(THREE.DynamicDrawUsage),
   );
   const lineMaterial = new THREE.LineBasicMaterial({
-    color: PALETTE.ink,
+    color: isDark() ? PALETTE.lineDark : PALETTE.ink,
     transparent: true,
     opacity: 0.2,
     fog: true,
@@ -309,16 +313,19 @@ export function createShareNetworkScene(host: HTMLElement, onReady?: () => void)
   // Each pulse is a short comet: a bright head and a tail fading into the background.
   const TRAIL = 6;
   const TRAIL_STEP = 0.022;
-  const fogColor = new THREE.Color(PALETTE.fog);
   const pulsePositions = new Float32Array(PULSE_COUNT * TRAIL * 3);
   const pulseColors = new Float32Array(PULSE_COUNT * TRAIL * 3);
   const tailColor = new THREE.Color();
-  pulses.forEach((pulse, i) => {
-    for (let k = 0; k < TRAIL; k += 1) {
-      tailColor.copy(pulse.color).lerp(fogColor, (k / TRAIL) ** 0.8);
-      tailColor.toArray(pulseColors, (i * TRAIL + k) * 3);
-    }
-  });
+  /** Tails fade into the background colour, which differs per theme. */
+  function paintTails() {
+    pulses.forEach((pulse, i) => {
+      for (let k = 0; k < TRAIL; k += 1) {
+        tailColor.copy(pulse.color).lerp(fog.color, (k / TRAIL) ** 0.8);
+        tailColor.toArray(pulseColors, (i * TRAIL + k) * 3);
+      }
+    });
+  }
+  paintTails();
   const pulseGeometry = new THREE.BufferGeometry();
   pulseGeometry.setAttribute(
     "position",
@@ -486,6 +493,17 @@ export function createShareNetworkScene(host: HTMLElement, onReady?: () => void)
   renderer.render(scene, camera);
   onReady?.();
 
+  // Switch fog, lines and pulse tails when the theme changes (no reload needed).
+  function onTheme() {
+    const dark = isDark();
+    fog.color.set(dark ? PALETTE.fogDark : PALETTE.fog);
+    lineMaterial.color.set(dark ? PALETTE.lineDark : PALETTE.ink);
+    paintTails();
+    pulseGeometry.attributes.color.needsUpdate = true;
+    if (!running) renderer.render(scene, camera);
+  }
+  window.addEventListener("shareanything:theme-change", onTheme);
+
   if (!reduceMotion) {
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
@@ -494,6 +512,7 @@ export function createShareNetworkScene(host: HTMLElement, onReady?: () => void)
 
   return () => {
     stop();
+    window.removeEventListener("shareanything:theme-change", onTheme);
     resizeObserver.disconnect();
     window.removeEventListener("pointermove", onPointerMove);
     document.removeEventListener("visibilitychange", onVisibility);

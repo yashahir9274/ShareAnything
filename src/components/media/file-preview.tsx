@@ -19,7 +19,7 @@ export function FilePreview({ file }: { file: NoteFile }) {
     case "video":
       return (
         <div className="flex h-full min-h-0 items-center justify-center">
-          <video src={src} controls playsInline preload="metadata" className="max-h-full max-w-full rounded-2xl bg-ink" />
+          <video src={src} controls playsInline preload="metadata" className="max-h-full max-w-full rounded-2xl bg-black" />
         </div>
       );
     case "audio":
@@ -34,7 +34,7 @@ export function FilePreview({ file }: { file: NoteFile }) {
         <iframe
           src={src}
           title={file.name}
-          className="h-full min-h-[60vh] w-full rounded-2xl border border-line bg-white"
+          className="h-full min-h-[60vh] w-full rounded-2xl border border-line bg-surface"
         />
       );
     case "code":
@@ -50,7 +50,7 @@ export function FilePreview({ file }: { file: NoteFile }) {
           </div>
           <a
             href={fileRawUrl(file.id, true)}
-            className="rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-ink/90"
+            className="rounded-full bg-strong px-5 py-2.5 text-sm font-semibold text-on-strong transition hover:bg-strong/90"
           >
             Download
           </a>
@@ -71,7 +71,7 @@ export function FileThumb({ file, compact = false }: { file: NoteFile; compact?:
         decoding="async"
         className={
           file.name.toLowerCase().endsWith(".svg")
-            ? `h-full w-full bg-white object-contain ${compact ? "p-1" : "p-6"}`
+            ? `h-full w-full bg-surface object-contain ${compact ? "p-1" : "p-6"}`
             : "h-full w-full object-cover"
         }
       />
@@ -79,7 +79,7 @@ export function FileThumb({ file, compact = false }: { file: NoteFile; compact?:
   }
   if (file.kind === "video") {
     return (
-      <div className="relative h-full w-full bg-ink">
+      <div className="relative h-full w-full bg-black">
         <video src={`${fileRawUrl(file.id)}#t=0.5`} muted preload="metadata" className="h-full w-full object-cover opacity-90" />
         <span className="absolute inset-0 flex items-center justify-center">
           <span

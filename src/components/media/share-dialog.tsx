@@ -69,7 +69,7 @@ export function ShareDialog({ file, onClose }: { file: NoteFile; onClose: () => 
           </button>
         </div>
 
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-line bg-white p-4">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-line bg-surface p-4">
           {qr ? (
             // eslint-disable-next-line @next/next/no-img-element -- generated data URL
             <img src={qr} alt={`QR code for ${file.name}`} className="h-44 w-44" />
@@ -84,13 +84,13 @@ export function ShareDialog({ file, onClose }: { file: NoteFile; onClose: () => 
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-full border border-line bg-white px-4 py-2.5 text-center text-sm font-medium text-ink transition hover:border-ink/20"
+            className="rounded-full border border-line bg-surface px-4 py-2.5 text-center text-sm font-medium text-ink transition hover:border-ink/20"
           >
             Open share page
           </a>
           <a
             href={fileRawUrl(file.id, true)}
-            className="rounded-full border border-line bg-white px-4 py-2.5 text-center text-sm font-medium text-ink transition hover:border-ink/20"
+            className="rounded-full border border-line bg-surface px-4 py-2.5 text-center text-sm font-medium text-ink transition hover:border-ink/20"
           >
             Download
           </a>
@@ -98,7 +98,7 @@ export function ShareDialog({ file, onClose }: { file: NoteFile; onClose: () => 
             <button
               type="button"
               onClick={() => void nativeShare()}
-              className="col-span-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink/90"
+              className="col-span-2 rounded-full bg-strong px-4 py-2.5 text-sm font-semibold text-on-strong transition hover:bg-strong/90"
             >
               Share via apps…
             </button>

@@ -19,6 +19,8 @@ export type NoteFile = {
   size: number;
   kind: FileKind;
   createdAt: string;
+  /** Display name of whoever uploaded it, if they had set one. */
+  uploadedBy?: string;
 };
 
 export type FilesUsage = {
@@ -30,7 +32,7 @@ export type FilesUsage = {
 };
 
 export type FileEvent =
-  | { noteId: string; type: "added"; file: NoteFile; usage: FilesUsage }
+  | { noteId: string; type: "added"; file: NoteFile; usage: FilesUsage; uploaderId?: string; viaChat?: boolean }
   | { noteId: string; type: "updated"; file: NoteFile }
   | { noteId: string; type: "removed"; fileId: string; usage: FilesUsage };
 

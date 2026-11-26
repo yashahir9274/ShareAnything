@@ -18,11 +18,17 @@ export function NoteShell({ noteId, status = "Connecting…" }: { noteId?: strin
           <Brand tagline="Write together live. Share anything." />
         </div>
         <div className="flex shrink-0 items-center gap-1.5 opacity-60 sm:gap-2" aria-hidden>
-          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white/85 px-3 text-sm font-medium text-ink">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface/85 text-ink sm:w-14">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+              <rect x="3" y="4" width="18" height="12" rx="2" />
+              <path d="M8 20h8M12 16v4" />
+            </svg>
+          </span>
+          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface/85 px-3 text-sm font-medium text-ink">
             <PlusIcon className="h-4 w-4" />
             <span className="hidden sm:inline">New</span>
           </span>
-          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-white/85 px-3 text-sm font-medium text-ink">
+          <span className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface/85 px-3 text-sm font-medium text-ink">
             <LockIcon className="h-4 w-4" />
             <span className="hidden sm:inline">Protect</span>
           </span>
@@ -37,20 +43,20 @@ export function NoteShell({ noteId, status = "Connecting…" }: { noteId?: strin
         <div className="flex min-h-0 flex-1 flex-col gap-2.5 md:flex-row md:gap-4">
           <nav
             aria-hidden
-            className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-white/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
+            className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
           >
-            {["Document", "Files"].map((label, index) => (
+            {["Document", "Files", "Chat"].map((label, index) => (
               <span
                 key={label}
                 className={`flex flex-1 items-center gap-2.5 rounded-2xl px-3 py-2 md:flex-none md:py-2.5 ${
-                  index === 0 ? "bg-ink text-white" : "text-ink-muted"
+                  index === 0 ? "bg-strong text-on-strong" : "text-ink-muted"
                 }`}
               >
                 <span className="h-[18px] w-[18px] rounded-md border-[1.8px] border-current opacity-80" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">{label}</span>
-                  <span className={`hidden text-[11px] md:block ${index === 0 ? "text-white/60" : "text-ink/40"}`}>
-                    {index === 0 ? "Write together" : "Share anything"}
+                  <span className={`hidden text-[11px] md:block ${index === 0 ? "text-on-strong/60" : "text-ink/40"}`}>
+                    {["Write together", "Share anything", "Talk with others"][index]}
                   </span>
                 </span>
               </span>
@@ -61,7 +67,7 @@ export function NoteShell({ noteId, status = "Connecting…" }: { noteId?: strin
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line/80 px-4 py-2.5 sm:px-7 sm:py-3">
               <div className="flex items-center gap-3 text-sm text-ink-muted">
                 {noteId ? (
-                  <span className="rounded-full bg-white px-3 py-1 font-mono text-xs text-ink">/{noteId}</span>
+                  <span className="rounded-full bg-surface px-3 py-1 font-mono text-xs text-ink">/{noteId}</span>
                 ) : null}
                 <span className="inline-flex items-center gap-2" role="status">
                   <span className="h-2 w-2 rounded-full bg-accent animate-soft-pulse" />

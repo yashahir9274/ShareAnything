@@ -24,6 +24,10 @@ A modern take on [notepad.pw](https://notepad.pw/) — instant shared notes with
 - Password lock enforced on the server (scrypt hashes, per-note access tokens, unlock rate limit)
 - Share-link copy, monospace mode, word/character counts
 - **Files tab (media manager)** per note: upload anything (drag & drop, paste, multi-select) or create code snippets; previews for images, video, audio, PDF and syntax-highlighted code; search, filters, grid/list; rename/delete; insert images/videos into the document. Images and videos added in the editor are stored here too
+- **Password lock with auto re-lock**: protect a note and choose "Lock again after" (5 min … 7 days, or a custom time up to 30 days). After that time everyone who unlocked it — including the owner — must enter the password again; enforced on the server, open pages lock live
+- **Theme**: System (default) / Light / Dark, applied before first paint (no flash) and followed live when the device theme changes
+- **Chat tab** per note: messages saved with the note, who's online (avatars), "is typing…", unread badges and a "(n)" count in the browser tab title. People pick a display name on first chat (remembered on their device; not an account)
+- **Notifications** (opt-in bell): while a note is open in a background tab or another app, get a browser notification for new messages, new files and document edits. Notifications never include message text — only who did what. (Alerts when the note isn't open at all would need Web Push.)
 - Every file gets a public share page (`/f/<id>`) with a copy-link button, QR code, system share sheet and download. Files in a locked note can only be listed or changed after unlocking; a file's own share link works for anyone who has it until the file is deleted
 - Modern “digital napkin” visual system (paper atmosphere, Fraunces brand type, coral accent)
 
@@ -68,7 +72,7 @@ git branch -f deploy HEAD && git push origin main deploy   # GitHub + live serve
 
 Notes are saved as `.data/notes/<id>.json` with the Yjs document base64-encoded (`version: 2`), about a second after each change and on shutdown. Notes saved by earlier versions (HTML `content`) are converted automatically the first time they are opened.
 
-Files are stored as `.data/files/<id>.bin` with metadata in `<id>.json`, and each note's list in `.data/notes/<id>.files.json`.
+Chat history is stored in `.data/notes/<id>.chat.json` (last 1,000 messages). Files are stored as `.data/files/<id>.bin` with metadata in `<id>.json`, and each note's list in `.data/notes/<id>.files.json`.
 
 ## Deploy
 

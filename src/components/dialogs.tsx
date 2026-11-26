@@ -111,8 +111,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
                 type="button"
                 data-autofocus
                 onClick={() => close(true)}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold text-white transition ${
-                  active.options.danger ? "bg-danger hover:brightness-110" : "bg-ink hover:bg-ink/90"
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                  active.options.danger ? "bg-danger text-white hover:brightness-110" : "bg-strong text-on-strong hover:bg-strong/90"
                 }`}
               >
                 {active.options.confirmLabel ?? "OK"}
@@ -128,7 +128,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
             <div
               key={notice.id}
               className={`pointer-events-auto max-w-md rounded-2xl px-4 py-3 text-sm shadow-lg animate-fade-up ${
-                notice.tone === "error" ? "bg-danger text-white" : "bg-ink text-white"
+                notice.tone === "error" ? "bg-danger text-white" : "bg-strong text-on-strong"
               }`}
             >
               {notice.message}
@@ -179,7 +179,7 @@ function PromptDialog({ options, onDone }: { options: PromptOptions; onDone: (va
               setValue(event.target.value);
               setError("");
             }}
-            className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm normal-case tracking-normal text-ink outline-none transition focus:border-accent"
+            className="mt-2 w-full rounded-2xl border border-line bg-surface px-4 py-3 text-sm normal-case tracking-normal text-ink outline-none transition focus:border-accent"
           />
         </label>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -189,7 +189,7 @@ function PromptDialog({ options, onDone }: { options: PromptOptions; onDone: (va
               <button
                 type="button"
                 onClick={() => onDone(options.extraAction!.value)}
-                className="rounded-full px-3 py-2.5 text-sm font-medium text-danger transition hover:bg-[#fee2e2]"
+                className="rounded-full px-3 py-2.5 text-sm font-medium text-danger transition hover:bg-danger/10"
               >
                 {options.extraAction.label}
               </button>

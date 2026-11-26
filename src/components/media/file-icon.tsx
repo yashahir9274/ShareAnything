@@ -6,10 +6,10 @@ const KIND_STYLE: Record<FileKind, { bg: string; fg: string; label: string }> = 
   audio: { bg: "bg-[#f3e8ff]", fg: "text-[#7c3aed]", label: "Audio" },
   pdf: { bg: "bg-[#fee2e2]", fg: "text-[#b91c1c]", label: "PDF" },
   code: { bg: "bg-[#0b1420]", fg: "text-[#7dd3c0]", label: "Code" },
-  text: { bg: "bg-white", fg: "text-ink-muted", label: "Text" },
+  text: { bg: "bg-surface", fg: "text-ink-muted", label: "Text" },
   document: { bg: "bg-[#dbeafe]", fg: "text-[#1d4ed8]", label: "Document" },
   archive: { bg: "bg-[#fef3c7]", fg: "text-[#b45309]", label: "Archive" },
-  other: { bg: "bg-white", fg: "text-ink-muted", label: "File" },
+  other: { bg: "bg-surface", fg: "text-ink-muted", label: "File" },
 };
 
 export function kindLabel(kind: FileKind) {
@@ -94,7 +94,7 @@ export function FileIcon({
     >
       <Glyph kind={kind} />
       {ext && showExtension ? (
-        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-white/90 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-ink">
+        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-surface/90 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-ink">
           {ext}
         </span>
       ) : null}

@@ -38,6 +38,7 @@ type StoredNoteV2 = {
   version: 2;
   id: string;
   password: PasswordRecord | null;
+  relockMinutes?: number | null;
   createdAt: string;
   updatedAt: string;
   /** Base64 of Y.encodeStateAsUpdate(doc). */
@@ -60,6 +61,8 @@ type LiveNote = {
   id: string;
   doc: Y.Doc;
   password: PasswordRecord | null;
+  /** "Lock again after" time for unlocked viewers, in minutes (null = never). */
+  relockMinutes: number | null;
   createdAt: string;
   updatedAt: string;
   /** False until the first change; untouched notes are never written to disk. */
@@ -123,6 +126,7 @@ async function loadNote(id: string): Promise<LiveNote> {
     id,
     doc: new Y.Doc(),
     password: null,
+    relockMinutes: null,
     createdAt: now,
     updatedAt: now,
     exists: false,
@@ -148,6 +152,7 @@ async function loadNote(id: string): Promise<LiveNote> {
   if ("version" in data && data.version === 2) {
     Y.applyUpdate(base.doc, Buffer.from(data.ydoc, "base64"));
     base.password = data.password;
+    base.relockMinutes = data.relockMinutes ?? null;
     return base;
   }
 
@@ -188,6 +193,7 @@ function saveNow(note: LiveNote): Promise<void> {
       version: 2,
       id: note.id,
       password: note.password,
+      relockMinutes: note.relockMinutes,
       createdAt: note.createdAt,
       updatedAt: note.updatedAt,
       ydoc: Buffer.from(Y.encodeStateAsUpdate(note.doc)).toString("base64"),
@@ -252,12 +258,40 @@ function getSecret(): Promise<Buffer> {
   return secretPromise;
 }
 
-/** Token is bound to the note and its current password, so changing the password revokes it. */
-async function tokenFor(note: LiveNote): Promise<string> {
+/**
+ * Access token: "<issued-at>.<signature>". The signature covers the note, its current
+ * password and the issue time, so changing the password revokes every token, and the
+ * issue time can't be edited to dodge "lock again after".
+ */
+async function tokenFor(note: LiveNote, issuedAt = Date.now()): Promise<string> {
   if (!note.password) return "";
-  return createHmac("sha256", await getSecret())
-    .update(`${note.id}\n${note.password.hash}`)
+  const signature = createHmac("sha256", await getSecret())
+    .update(`${note.id}\n${note.password.hash}\n${issuedAt}`)
     .digest("base64url");
+  return `${issuedAt.toString(36)}.${signature}`;
+}
+
+function expiresAt(note: LiveNote, issuedAt: number): number | null {
+  return note.relockMinutes ? issuedAt + note.relockMinutes * 60_000 : null;
+}
+
+/** Checks a token; returns when it was issued, or null if it's invalid or has expired. */
+async function verifyToken(note: LiveNote, token: unknown): Promise<number | null> {
+  if (!note.password || typeof token !== "string") return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  const issuedAt = parseInt(token.slice(0, dot), 36);
+  if (!Number.isFinite(issuedAt) || issuedAt > Date.now() + 60_000) return null;
+  if (!safeEqual(token, await tokenFor(note, issuedAt))) return null;
+  const expiry = expiresAt(note, issuedAt);
+  if (expiry !== null && Date.now() >= expiry) return null;
+  return issuedAt;
+}
+
+/** When access granted at `issuedAt` ends for this note (null = never), for live connections. */
+export async function accessExpiry(id: string, issuedAt: number): Promise<number | null> {
+  const note = await getLive(id);
+  return note.password ? expiresAt(note, issuedAt) : null;
 }
 
 function safeEqual(a: string, b: string) {
@@ -296,20 +330,23 @@ function snapshot(note: LiveNote): NoteSnapshot {
   return {
     id: note.id,
     locked: note.password !== null,
+    relockMinutes: note.password ? note.relockMinutes : null,
     state: Y.encodeStateAsUpdate(note.doc),
     stateVector: Y.encodeStateVector(note.doc),
   };
 }
 
-export type OpenResult = { status: "open"; note: NoteSnapshot } | { status: "locked" };
+/** `issuedAt` is when this viewer's access started (null for notes without a password). */
+export type OpenResult =
+  | { status: "open"; note: NoteSnapshot; issuedAt: number | null }
+  | { status: "locked" };
 
 /** Returns the note if it is unlocked or `token` grants access. Does not create files. */
 export async function openNote(id: string, token?: unknown): Promise<OpenResult> {
   const note = await getLive(id);
-  if (!note.password) return { status: "open", note: snapshot(note) };
-  if (typeof token === "string" && token && safeEqual(token, await tokenFor(note))) {
-    return { status: "open", note: snapshot(note) };
-  }
+  if (!note.password) return { status: "open", note: snapshot(note), issuedAt: null };
+  const issuedAt = await verifyToken(note, token);
+  if (issuedAt !== null) return { status: "open", note: snapshot(note), issuedAt };
   return { status: "locked" };
 }
 
@@ -350,7 +387,8 @@ export async function allocateNoteId(): Promise<string> {
     }
     const taken =
       (await pathExists(notePath(id))) ||
-      (await pathExists(path.join(NOTES_DIR, `${id}.files.json`)));
+      (await pathExists(path.join(NOTES_DIR, `${id}.files.json`))) ||
+      (await pathExists(path.join(NOTES_DIR, `${id}.chat.json`)));
     if (!taken) return id;
   }
   throw new Error("Could not allocate a note id");
@@ -360,13 +398,13 @@ export async function allocateNoteId(): Promise<string> {
 export async function checkNoteAccess(id: string, token?: unknown): Promise<boolean> {
   const note = await getLive(id);
   if (!note.password) return true;
-  return typeof token === "string" && token !== "" && safeEqual(token, await tokenFor(note));
+  return (await verifyToken(note, token)) !== null;
 }
 
 export async function unlockNote(
   id: string,
   password: string,
-): Promise<{ token: string; note: NoteSnapshot } | null> {
+): Promise<{ token: string; note: NoteSnapshot; issuedAt: number } | null> {
   const note = await getLive(id);
   const record = note.password;
   if (!record || !(await verifyPassword(record, password))) return null;
@@ -375,7 +413,8 @@ export async function unlockNote(
     note.password = await hashPassword(password);
     scheduleSave(note);
   }
-  return { token: await tokenFor(note), note: snapshot(note) };
+  const issuedAt = Date.now();
+  return { token: await tokenFor(note, issuedAt), note: snapshot(note), issuedAt };
 }
 
 export class NoteInputError extends Error {}
@@ -409,11 +448,23 @@ export async function applyNoteUpdate(id: string, update: Uint8Array): Promise<v
   scheduleSave(note);
 }
 
-export async function setNotePassword(id: string, password: string | null): Promise<string> {
+/**
+ * Sets, keeps or removes the password and the "lock again after" time.
+ * password: string = new password, null = remove, undefined = keep the current one.
+ */
+export async function setNotePassword(
+  id: string,
+  password: string | null | undefined,
+  relockMinutes: number | null,
+): Promise<{ token: string; issuedAt: number; passwordChanged: boolean }> {
   const note = await getLive(id);
-  note.password = password === null ? null : await hashPassword(password);
+  if (password === undefined && !note.password) throw new NoteInputError("Set a password first");
+  const passwordChanged = password !== undefined;
+  if (password !== undefined) note.password = password === null ? null : await hashPassword(password);
+  note.relockMinutes = note.password ? relockMinutes : null;
   note.updatedAt = new Date().toISOString();
   note.dirty = true;
   await saveNow(note);
-  return tokenFor(note);
+  const issuedAt = Date.now();
+  return { token: await tokenFor(note, issuedAt), issuedAt, passwordChanged };
 }

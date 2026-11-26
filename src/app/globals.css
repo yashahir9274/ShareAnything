@@ -11,7 +11,6 @@
   --teal: #0f766e;
   --teal-soft: #d9f3ef;
   --danger: #c2410c;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 28px 70px rgba(11, 20, 32, 0.2), 0 6px 18px rgba(11, 20, 32, 0.08);
   --background: var(--paper);
   --foreground: var(--ink);
 
@@ -20,10 +19,11 @@
   --strong: #0b1420;
   --on-strong: #ffffff;
   --grain-overlay: rgba(255, 255, 255, 0.55);
-  --scene-top: #cbd3dc;
-  --scene-bottom: #b4bfca;
-  --scene-vignette: rgba(11, 20, 32, 0.2);
-  --scene-opacity: 0.72;
+  /* Page background: a few shades below the panels so they stand out without shadows. */
+  --scene-base: #e4e9ee;
+  --scene-dot: rgba(11, 20, 32, 0.09);
+  --scene-glow-1: rgba(255, 92, 53, 0.07);
+  --scene-glow-2: rgba(15, 118, 110, 0.06);
   color-scheme: light;
 }
 
@@ -39,15 +39,14 @@ html[data-theme="dark"] {
   --teal: #2dd4bf;
   --teal-soft: #0f2f2b;
   --danger: #f87171;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 70px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.35);
   --surface: #1b2532;
   --strong: #e7ecf2;
   --on-strong: #0b1420;
   --grain-overlay: rgba(20, 28, 38, 0.6);
-  --scene-top: #111a24;
-  --scene-bottom: #070b10;
-  --scene-vignette: rgba(0, 0, 0, 0.5);
-  --scene-opacity: 0.55;
+  --scene-base: #090d13;
+  --scene-dot: rgba(255, 255, 255, 0.055);
+  --scene-glow-1: rgba(255, 107, 71, 0.05);
+  --scene-glow-2: rgba(45, 212, 191, 0.04);
   color-scheme: dark;
 }
 
@@ -185,45 +184,30 @@ body {
   }
 }
 
-/* ---- Background scene ------------------------------------------------
-   A static gradient that is always there, with the Three.js "share network"
-   canvas (src/components/scene/share-network-scene.ts) fading in on top once it has loaded. */
+/* ---- Background ------------------------------------------------------
+   Quiet on purpose — an even tone, a faint dot grid (like a notebook workspace) that
+   fades out toward the edges, and two very soft colour glows. Static, so nothing
+   moves behind your writing and phones don't spend battery on it. */
 
 .scene {
   position: fixed;
   inset: 0;
   z-index: -1;
-  overflow: hidden;
   pointer-events: none;
-  contain: strict;
-  /* A few shades darker than the paper-white cards so the content stands out,
-     with darker edges to pull the eye to the centre. */
   background:
-    radial-gradient(ellipse 120% 90% at 50% 40%, transparent 40%, var(--scene-vignette) 100%),
-    radial-gradient(1200px 600px at 12% -10%, rgba(255, 92, 53, 0.16), transparent 55%),
-    radial-gradient(900px 500px at 88% 0%, rgba(15, 118, 110, 0.14), transparent 50%),
-    linear-gradient(180deg, var(--scene-top) 0%, var(--scene-bottom) 100%);
+    radial-gradient(900px 520px at 8% -8%, var(--scene-glow-1), transparent 70%),
+    radial-gradient(800px 480px at 95% 0%, var(--scene-glow-2), transparent 70%),
+    var(--scene-base);
 }
 
-.scene-canvas {
+.scene::before {
+  content: "";
   position: absolute;
   inset: 0;
-  opacity: 0;
-  transition: opacity 1.2s ease-out;
-  /* Fade the network out behind the header and footer text so they stay readable. */
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, 0.25) 70px, #000 150px, #000 calc(100% - 90px), rgba(0, 0, 0, 0.2) calc(100% - 20px));
-  mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, 0.25) 70px, #000 150px, #000 calc(100% - 90px), rgba(0, 0, 0, 0.2) calc(100% - 20px));
-}
-
-.scene-canvas[data-ready="true"] {
-  /* Muted so the floating cards read as background, not content. */
-  opacity: var(--scene-opacity);
-}
-
-.scene-canvas canvas {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
+  background-image: radial-gradient(var(--scene-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
 }
 
 .paper-grain {
@@ -232,9 +216,6 @@ body {
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
 }
 
-.editor-shell {
-  box-shadow: var(--shadow);
-}
 
 @keyframes fade-up {
   from {

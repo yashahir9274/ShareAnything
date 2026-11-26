@@ -173,7 +173,7 @@ export function SelectMenu({
         aria-label={`${label}: ${selected?.label ?? ""}`}
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={onButtonKey}
-        className={`group flex w-full items-center gap-3 rounded-2xl border bg-surface px-4 py-3 text-left text-sm text-ink shadow-[0_1px_0_rgba(11,20,32,0.03)] outline-none transition ${
+        className={`group flex w-full items-center gap-3 rounded-2xl border bg-surface px-4 py-3 text-left text-sm text-ink outline-none transition ${
           open ? "border-accent ring-4 ring-accent/15" : "border-line hover:border-ink/25 focus-visible:border-accent focus-visible:ring-4 focus-visible:ring-accent/15"
         }`}
       >

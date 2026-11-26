@@ -24,7 +24,7 @@ export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
 export function Brand({ tagline }: { tagline: string }) {
   return (
     <span className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-      <LogoMark className="h-9 w-9 shrink-0 drop-shadow-[0_6px_14px_rgba(242,70,31,0.35)] transition group-hover:-rotate-6 sm:h-11 sm:w-11" />
+      <LogoMark className="h-9 w-9 shrink-0 transition group-hover:-rotate-6 sm:h-11 sm:w-11" />
       {/* Very narrow phones: the logo mark alone (the header buttons need the room). */}
       <span className="hidden min-w-0 min-[420px]:block">
         <span className="block truncate font-display text-[1.35rem] leading-none tracking-tight text-ink transition group-hover:text-accent sm:text-[1.85rem]">

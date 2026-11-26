@@ -43,7 +43,7 @@ export function NoteShell({ noteId, status = "Connecting…" }: { noteId?: strin
         <div className="flex min-h-0 flex-1 flex-col gap-2.5 md:flex-row md:gap-4">
           <nav
             aria-hidden
-            className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
+            className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
           >
             {["Document", "Files", "Chat"].map((label, index) => (
               <span

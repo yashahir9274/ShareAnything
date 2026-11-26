@@ -314,7 +314,7 @@ export function MediaManager({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,92,53,0.25)] transition hover:brightness-105"
+              className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-white transition hover:brightness-105"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M12 16V4m0 0-4 4m4-4 4 4M5 20h14" />
@@ -444,7 +444,7 @@ export function MediaManager({
                   onKeyDown={(event) => {
                     if (event.key === "Enter") setPreviewId(file.id);
                   }}
-                  className="group relative block w-full cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface text-left shadow-[0_1px_0_rgba(11,20,32,0.03)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(11,20,32,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="group relative block w-full cursor-pointer overflow-hidden rounded-2xl border border-line bg-surface text-left transition hover:border-ink/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <FileThumb file={file} />

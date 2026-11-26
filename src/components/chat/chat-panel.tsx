@@ -550,7 +550,7 @@ export function ChatPanel({
               type="submit"
               disabled={(!draft.trim() && !readyIds.length) || sending || uploading}
               aria-label="Send message"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white shadow-[0_8px_20px_rgba(255,92,53,0.3)] transition hover:brightness-105 disabled:opacity-40 disabled:shadow-none"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition hover:brightness-105 disabled:opacity-40 disabled:shadow-none"
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M5 12h14M13 6l6 6-6 6" />

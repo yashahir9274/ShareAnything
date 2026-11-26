@@ -5,11 +5,41 @@ import Placeholder from "@tiptap/extension-placeholder";
 import type { EditorView } from "@tiptap/pm/view";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
-import { useEffect, useRef, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, type ChangeEvent } from "react";
 import type * as Y from "yjs";
 import { useDialogs } from "@/components/dialogs";
 import { BODY_FIELD, createEditorExtensions } from "@/lib/editor-extensions";
 import { isSafeMediaUrl } from "@/lib/upload-rules";
+import {
+  AlignCenterIcon,
+  AlignJustifyIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
+  BulletListIcon,
+  ClearFormatIcon,
+  CodeBlockIcon,
+  ColorPicker,
+  DividerIcon,
+  GlobeIcon,
+  HighlighterIcon,
+  ImageIcon,
+  LinkIcon,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MoreIcon,
+  NumberListIcon,
+  PlusIcon,
+  QuoteIcon,
+  RedoIcon,
+  ToolbarButton,
+  ToolbarDivider,
+  ToolbarMenu,
+  ToolbarMenus,
+  UndoIcon,
+  VideoIcon,
+  YoutubeIcon,
+} from "@/components/editor-toolbar-ui";
 
 export type EditorStats = {
   words: number;
@@ -53,144 +83,30 @@ const FONT_SIZES = [
   "48px",
 ] as const;
 
-const TEXT_COLORS = [
-  "#0b1420",
-  "#5a6675",
-  "#ff5c35",
-  "#0f766e",
-  "#c2410c",
-  "#1d4ed8",
-  "#7c3aed",
-  "#be185d",
-  "#ffffff",
+/** Text colours: neutrals, then vivid, deep and light shades of each hue. */
+const TEXT_PALETTE = [
+  ["#000000", "#1f2937", "#374151", "#4b5563", "#6b7280", "#9ca3af", "#d1d5db", "#e5e7eb", "#f3f4f6", "#ffffff"],
+  ["#dc2626", "#ea580c", "#f59e0b", "#eab308", "#16a34a", "#0d9488", "#0891b2", "#2563eb", "#7c3aed", "#db2777"],
+  ["#991b1b", "#9a3412", "#b45309", "#a16207", "#166534", "#115e59", "#155e75", "#1e40af", "#5b21b6", "#9d174d"],
+  ["#fca5a5", "#fdba74", "#fcd34d", "#fde047", "#86efac", "#5eead4", "#67e8f9", "#93c5fd", "#c4b5fd", "#f9a8d4"],
 ] as const;
 
-const HIGHLIGHT_COLORS = [
-  "#ffe8e1",
-  "#d9f3ef",
-  "#fef3c7",
-  "#dbeafe",
-  "#f3e8ff",
-  "#fce7f3",
-  "#e2e8f0",
+/** Highlights: soft marker colours that keep text readable. */
+const HIGHLIGHT_PALETTE = [
+  ["#fef08a", "#fde68a", "#fed7aa", "#fecaca", "#fbcfe8", "#e9d5ff", "#c7d2fe", "#bfdbfe", "#a5f3fc", "#bbf7d0"],
+  ["#fde047", "#fcd34d", "#fdba74", "#fca5a5", "#f9a8d4", "#d8b4fe", "#a5b4fc", "#93c5fd", "#67e8f9", "#86efac"],
 ] as const;
 
-function ToolbarButton({
-  label,
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onClick();
-      }}
-      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold transition disabled:opacity-35 ${
-        active
-          ? "bg-strong text-on-strong"
-          : "bg-transparent text-ink-muted hover:bg-surface hover:text-ink"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
+const BLOCK_STYLES = [
+  { key: "paragraph", label: "Normal text", className: "text-sm" },
+  { key: "heading1", label: "Heading 1", className: "font-display text-xl" },
+  { key: "heading2", label: "Heading 2", className: "font-display text-lg" },
+  { key: "heading3", label: "Heading 3", className: "text-base font-semibold" },
+  { key: "blockquote", label: "Quote", className: "text-sm italic" },
+  { key: "codeBlock", label: "Code block", className: "font-mono text-xs" },
+] as const;
 
-function ToolbarDivider() {
-  return <span className="mx-0.5 h-5 w-px shrink-0 bg-line" aria-hidden />;
-}
-
-function ToolbarSelect({
-  label,
-  value,
-  onChange,
-  children,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className="sr-only-group inline-flex items-center" title={label}>
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onMouseDown={(event) => event.stopPropagation()}
-        onChange={(event) => onChange(event.target.value)}
-        className={`h-8 rounded-lg border border-line bg-surface px-2 text-xs text-ink outline-none transition focus:border-accent ${className}`}
-      >
-        {children}
-      </select>
-    </label>
-  );
-}
-
-function ColorSwatch({
-  label,
-  colors,
-  value,
-  onPick,
-  onClear,
-}: {
-  label: string;
-  colors: readonly string[];
-  value?: string;
-  onPick: (color: string) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-1.5 py-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
-        {label}
-      </span>
-      {colors.map((color) => (
-        <button
-          key={color}
-          type="button"
-          title={color}
-          aria-label={`${label} ${color}`}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onPick(color);
-          }}
-          className={`h-4 w-4 rounded-full border transition ${
-            value === color ? "border-ink scale-110" : "border-black/10"
-          }`}
-          style={{ backgroundColor: color }}
-        />
-      ))}
-      <button
-        type="button"
-        title={`Clear ${label.toLowerCase()}`}
-        aria-label={`Clear ${label}`}
-        onMouseDown={(event) => {
-          event.preventDefault();
-          onClear();
-        }}
-        className="ml-0.5 text-[10px] font-semibold text-ink-muted hover:text-ink"
-      >
-        ×
-      </button>
-    </div>
-  );
-}
+type BlockKey = (typeof BLOCK_STYLES)[number]["key"];
 
 type Notify = (message: string, tone?: "error" | "info") => void;
 
@@ -236,6 +152,7 @@ function EditorToolbar({ editor, uploadFile }: { editor: Editor; uploadFile: Upl
       orderedList: current.isActive("orderedList"),
       blockquote: current.isActive("blockquote"),
       codeBlock: current.isActive("codeBlock"),
+      link: current.isActive("link"),
       alignLeft: current.isActive({ textAlign: "left" }),
       alignCenter: current.isActive({ textAlign: "center" }),
       alignRight: current.isActive({ textAlign: "right" }),
@@ -353,8 +270,36 @@ function EditorToolbar({ editor, uploadFile }: { editor: Editor; uploadFile: Upl
     }
   }
 
+  const block: BlockKey = state.heading1
+    ? "heading1"
+    : state.heading2
+      ? "heading2"
+      : state.heading3
+        ? "heading3"
+        : state.codeBlock
+          ? "codeBlock"
+          : state.blockquote
+            ? "blockquote"
+            : "paragraph";
+
+  function setBlock(key: BlockKey) {
+    const chain = editor.chain().focus();
+    if (key === "heading1") chain.setHeading({ level: 1 }).run();
+    else if (key === "heading2") chain.setHeading({ level: 2 }).run();
+    else if (key === "heading3") chain.setHeading({ level: 3 }).run();
+    else if (key === "codeBlock") chain.setCodeBlock().run();
+    else if (key === "blockquote") (state.blockquote ? chain : chain.setParagraph().toggleBlockquote()).run();
+    else if (state.blockquote) chain.toggleBlockquote().setParagraph().run();
+    else chain.setParagraph().run();
+  }
+
+  const align = state.alignCenter ? "center" : state.alignRight ? "right" : state.alignJustify ? "justify" : "left";
+  const AlignIcon = { left: AlignLeftIcon, center: AlignCenterIcon, right: AlignRightIcon, justify: AlignJustifyIcon }[align];
+  const fontLabel = FONT_FAMILIES.find((font) => font.value === state.fontFamily)?.label ?? "Font";
+  const blockLabel = BLOCK_STYLES.find((style) => style.key === block)?.label ?? "Normal text";
+
   return (
-    <div className="editor-toolbar shrink-0 space-y-2 border-b border-line/80 px-3 py-2 sm:px-5 sm:py-2.5">
+    <div className="editor-toolbar shrink-0 border-b border-line/80 px-2 py-1.5 sm:px-4">
       <input
         ref={imageInputRef}
         type="file"
@@ -372,252 +317,245 @@ function EditorToolbar({ editor, uploadFile }: { editor: Editor; uploadFile: Upl
         onChange={(event) => void onVideoFiles(event)}
       />
 
-      <div className="toolbar-row flex items-center gap-1.5">
-        <ToolbarButton
-          label="Undo"
-          disabled={!state.canUndo}
-          onClick={() => editor.chain().focus().undo().run()}
-        >
-          ↶
-        </ToolbarButton>
-        <ToolbarButton
-          label="Redo"
-          disabled={!state.canRedo}
-          onClick={() => editor.chain().focus().redo().run()}
-        >
-          ↷
-        </ToolbarButton>
+      <ToolbarMenus>
+        <div className="toolbar-row flex items-center gap-0.5">
+          <ToolbarButton label="Undo (Ctrl+Z)" disabled={!state.canUndo} onClick={() => editor.chain().focus().undo().run()}>
+            <UndoIcon />
+          </ToolbarButton>
+          <ToolbarButton label="Redo (Ctrl+Y)" disabled={!state.canRedo} onClick={() => editor.chain().focus().redo().run()}>
+            <RedoIcon />
+          </ToolbarButton>
 
-        <ToolbarDivider />
+          <ToolbarDivider />
 
-        <ToolbarSelect
-          label="Font"
-          value={state.fontFamily}
-          className="min-w-[7.5rem]"
-          onChange={(value) => {
-            if (!value) {
-              editor.commands.unsetFontFamily();
-              return;
+          <ToolbarMenu
+            id="block"
+            label="Text style"
+            width={210}
+            active={block !== "paragraph"}
+            trigger={<span className="w-[4.6rem] truncate text-left">{blockLabel}</span>}
+          >
+            {BLOCK_STYLES.map((style) => (
+              <MenuItem
+                key={style.key}
+                label={<span className={style.className}>{style.label}</span>}
+                checked={block === style.key}
+                onSelect={() => setBlock(style.key)}
+              />
+            ))}
+          </ToolbarMenu>
+
+          <ToolbarMenu
+            id="font"
+            label="Font"
+            width={200}
+            active={Boolean(state.fontFamily)}
+            trigger={<span className="w-[3.6rem] truncate text-left">{fontLabel}</span>}
+          >
+            {FONT_FAMILIES.map((font) => (
+              <MenuItem
+                key={font.label}
+                label={font.label}
+                style={{ fontFamily: font.value || undefined }}
+                checked={state.fontFamily === font.value}
+                onSelect={() => {
+                  if (!font.value) editor.chain().focus().unsetFontFamily().run();
+                  else editor.chain().focus().setMark("textStyle", { fontFamily: font.value }).run();
+                }}
+              />
+            ))}
+          </ToolbarMenu>
+
+          <ToolbarMenu
+            id="size"
+            label="Font size"
+            width={150}
+            active={Boolean(state.fontSize)}
+            trigger={<span className="w-7 text-left">{state.fontSize ? state.fontSize.replace("px", "") : "Size"}</span>}
+          >
+            <MenuItem
+              label="Default"
+              checked={!state.fontSize}
+              onSelect={() => editor.chain().focus().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run()}
+            />
+            {FONT_SIZES.map((size) => (
+              <MenuItem
+                key={size}
+                label={size.replace("px", "")}
+                hint="px"
+                checked={state.fontSize === size}
+                onSelect={() => editor.chain().focus().setMark("textStyle", { fontSize: size }).run()}
+              />
+            ))}
+          </ToolbarMenu>
+
+          <ToolbarDivider />
+
+          <ToolbarButton label="Bold (Ctrl+B)" active={state.bold} onClick={() => editor.chain().focus().toggleBold().run()}>
+            <span className="font-bold">B</span>
+          </ToolbarButton>
+          <ToolbarButton label="Italic (Ctrl+I)" active={state.italic} onClick={() => editor.chain().focus().toggleItalic().run()}>
+            <span className="font-serif italic">I</span>
+          </ToolbarButton>
+          <ToolbarButton label="Underline (Ctrl+U)" active={state.underline} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+            <span className="underline underline-offset-2">U</span>
+          </ToolbarButton>
+          <ToolbarMenu id="marks" label="More formatting" width={220} active={state.strike || state.code} trigger={<MoreIcon />}>
+            <MenuItem
+              icon={<span className="line-through">S</span>}
+              label="Strikethrough"
+              checked={state.strike}
+              onSelect={() => editor.chain().focus().toggleStrike().run()}
+            />
+            <MenuItem
+              icon={<span className="font-mono text-[10px]">{"</>"}</span>}
+              label="Inline code"
+              checked={state.code}
+              onSelect={() => editor.chain().focus().toggleCode().run()}
+            />
+            <MenuSeparator />
+            <MenuItem
+              icon={<ClearFormatIcon />}
+              label="Clear formatting"
+              onSelect={() => editor.chain().focus().unsetAllMarks().run()}
+            />
+          </ToolbarMenu>
+
+          <ToolbarDivider />
+
+          <ToolbarMenu
+            id="color"
+            label="Text colour"
+            width={292}
+            active={Boolean(state.color)}
+            trigger={
+              <span className="flex flex-col items-center leading-none">
+                <span className="text-[13px] font-bold">A</span>
+                <span
+                  className="mt-0.5 h-[3px] w-4 rounded-full"
+                  style={{ backgroundColor: state.color || "var(--ink)" }}
+                />
+              </span>
             }
-            editor.chain().focus().setMark("textStyle", { fontFamily: value }).run();
-          }}
-        >
-          {FONT_FAMILIES.map((font) => (
-            <option key={font.label} value={font.value} style={{ fontFamily: font.value || undefined }}>
-              {font.label}
-            </option>
-          ))}
-        </ToolbarSelect>
+          >
+            <ColorPicker
+              palette={TEXT_PALETTE}
+              value={state.color}
+              recentKey="shareanything:recent-colors:text"
+              clearLabel="Default colour"
+              onPick={(color) => editor.chain().focus().setMark("textStyle", { color }).run()}
+              onClear={() => editor.chain().focus().setMark("textStyle", { color: null }).removeEmptyTextStyle().run()}
+            />
+          </ToolbarMenu>
 
-        <ToolbarSelect
-          label="Font size"
-          value={state.fontSize}
-          className="min-w-[4.5rem]"
-          onChange={(value) => {
-            if (!value) {
-              editor
-                .chain()
-                .focus()
-                .setMark("textStyle", { fontSize: null })
-                .removeEmptyTextStyle()
-                .run();
-              return;
+          <ToolbarMenu
+            id="highlight"
+            label="Highlight"
+            width={292}
+            active={Boolean(state.highlight)}
+            trigger={
+              <span className="flex flex-col items-center leading-none">
+                <HighlighterIcon className="h-3.5 w-3.5" />
+                <span
+                  className="mt-0.5 h-[3px] w-4 rounded-full border border-line"
+                  style={{ backgroundColor: state.highlight || "transparent" }}
+                />
+              </span>
             }
-            editor.chain().focus().setMark("textStyle", { fontSize: value }).run();
-          }}
-        >
-          <option value="">Size</option>
-          {FONT_SIZES.map((size) => (
-            <option key={size} value={size}>
-              {size.replace("px", "")}
-            </option>
-          ))}
-        </ToolbarSelect>
+          >
+            <ColorPicker
+              palette={HIGHLIGHT_PALETTE}
+              value={state.highlight}
+              recentKey="shareanything:recent-colors:highlight"
+              clearLabel="No highlight"
+              onPick={(color) => editor.chain().focus().setHighlight({ color }).run()}
+              onClear={() => editor.chain().focus().unsetHighlight().run()}
+            />
+          </ToolbarMenu>
 
-        <ColorSwatch
-          label="Color"
-          colors={TEXT_COLORS}
-          value={state.color}
-          onPick={(color) =>
-            editor.chain().focus().setMark("textStyle", { color }).run()
-          }
-          onClear={() =>
-            editor
-              .chain()
-              .focus()
-              .setMark("textStyle", { color: null })
-              .removeEmptyTextStyle()
-              .run()
-          }
-        />
+          <ToolbarDivider />
 
-        <ColorSwatch
-          label="Mark"
-          colors={HIGHLIGHT_COLORS}
-          value={state.highlight}
-          onPick={(color) =>
-            editor.chain().focus().toggleHighlight({ color }).run()
-          }
-          onClear={() => editor.chain().focus().unsetHighlight().run()}
-        />
-      </div>
+          <ToolbarMenu id="align" label="Alignment" width={190} trigger={<AlignIcon />}>
+            {(
+              [
+                ["left", "Align left", AlignLeftIcon],
+                ["center", "Center", AlignCenterIcon],
+                ["right", "Align right", AlignRightIcon],
+                ["justify", "Justify", AlignJustifyIcon],
+              ] as const
+            ).map(([value, text, Icon]) => (
+              <MenuItem
+                key={value}
+                icon={<Icon />}
+                label={text}
+                checked={align === value}
+                onSelect={() => editor.chain().focus().setTextAlign(value).run()}
+              />
+            ))}
+          </ToolbarMenu>
 
-      <div className="toolbar-row flex items-center gap-0.5">
-        <ToolbarButton
-          label="Bold"
-          active={state.bold}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <span className="font-bold">B</span>
-        </ToolbarButton>
-        <ToolbarButton
-          label="Italic"
-          active={state.italic}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <span className="italic">I</span>
-        </ToolbarButton>
-        <ToolbarButton
-          label="Underline"
-          active={state.underline}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-        >
-          <span className="underline">U</span>
-        </ToolbarButton>
-        <ToolbarButton
-          label="Strikethrough"
-          active={state.strike}
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-        >
-          <span className="line-through">S</span>
-        </ToolbarButton>
-        <ToolbarButton
-          label="Inline code"
-          active={state.code}
-          onClick={() => editor.chain().focus().toggleCode().run()}
-        >
-          {"</>"}
-        </ToolbarButton>
+          <ToolbarMenu
+            id="lists"
+            label="Lists"
+            width={200}
+            active={state.bulletList || state.orderedList}
+            trigger={state.orderedList ? <NumberListIcon /> : <BulletListIcon />}
+          >
+            <MenuItem
+              icon={<BulletListIcon />}
+              label="Bullet list"
+              checked={state.bulletList}
+              onSelect={() => editor.chain().focus().toggleBulletList().run()}
+            />
+            <MenuItem
+              icon={<NumberListIcon />}
+              label="Numbered list"
+              checked={state.orderedList}
+              onSelect={() => editor.chain().focus().toggleOrderedList().run()}
+            />
+          </ToolbarMenu>
 
-        <ToolbarDivider />
+          <ToolbarButton label="Link (add or edit)" active={state.link} onClick={() => void setLink()}>
+            <LinkIcon />
+          </ToolbarButton>
 
-        <ToolbarButton
-          label="Align left"
-          active={state.alignLeft}
-          onClick={() => editor.chain().focus().setTextAlign("left").run()}
-        >
-          ⬅
-        </ToolbarButton>
-        <ToolbarButton
-          label="Align center"
-          active={state.alignCenter}
-          onClick={() => editor.chain().focus().setTextAlign("center").run()}
-        >
-          ↔
-        </ToolbarButton>
-        <ToolbarButton
-          label="Align right"
-          active={state.alignRight}
-          onClick={() => editor.chain().focus().setTextAlign("right").run()}
-        >
-          ➡
-        </ToolbarButton>
-        <ToolbarButton
-          label="Justify"
-          active={state.alignJustify}
-          onClick={() => editor.chain().focus().setTextAlign("justify").run()}
-        >
-          ≡
-        </ToolbarButton>
+          <ToolbarDivider />
 
-        <ToolbarDivider />
-
-        <ToolbarButton
-          label="Heading 1"
-          active={state.heading1}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-        >
-          H1
-        </ToolbarButton>
-        <ToolbarButton
-          label="Heading 2"
-          active={state.heading2}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        >
-          H2
-        </ToolbarButton>
-        <ToolbarButton
-          label="Heading 3"
-          active={state.heading3}
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-        >
-          H3
-        </ToolbarButton>
-
-        <ToolbarDivider />
-
-        <ToolbarButton
-          label="Bullet list"
-          active={state.bulletList}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          • List
-        </ToolbarButton>
-        <ToolbarButton
-          label="Numbered list"
-          active={state.orderedList}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        >
-          1. List
-        </ToolbarButton>
-        <ToolbarButton
-          label="Quote"
-          active={state.blockquote}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        >
-          “ ”
-        </ToolbarButton>
-        <ToolbarButton
-          label="Code block"
-          active={state.codeBlock}
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        >
-          Code
-        </ToolbarButton>
-        <ToolbarButton label="Link" onClick={() => void setLink()}>
-          Link
-        </ToolbarButton>
-        <ToolbarButton
-          label="Divider"
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        >
-          —
-        </ToolbarButton>
-
-        <ToolbarDivider />
-
-        <ToolbarButton
-          label="Upload image"
-          onClick={() => imageInputRef.current?.click()}
-        >
-          Image
-        </ToolbarButton>
-        <ToolbarButton label="Image from URL" onClick={() => void addImageFromUrl()}>
-          Img URL
-        </ToolbarButton>
-        <ToolbarButton
-          label="Upload video"
-          onClick={() => videoInputRef.current?.click()}
-        >
-          Video
-        </ToolbarButton>
-        <ToolbarButton label="Video from URL" onClick={() => void addVideoFromUrl()}>
-          Vid URL
-        </ToolbarButton>
-        <ToolbarButton label="YouTube embed" onClick={() => void addYoutube()}>
-          YouTube
-        </ToolbarButton>
-      </div>
+          <ToolbarMenu
+            id="insert"
+            label="Insert"
+            width={230}
+            trigger={
+              <span className="flex items-center gap-1">
+                <PlusIcon className="h-3.5 w-3.5" />
+                Insert
+              </span>
+            }
+          >
+            <MenuLabel>Image</MenuLabel>
+            <MenuItem icon={<ImageIcon />} label="Upload image" onSelect={() => imageInputRef.current?.click()} />
+            <MenuItem icon={<GlobeIcon />} label="Image from link" onSelect={() => void addImageFromUrl()} />
+            <MenuLabel>Video</MenuLabel>
+            <MenuItem icon={<VideoIcon />} label="Upload video" onSelect={() => videoInputRef.current?.click()} />
+            <MenuItem icon={<GlobeIcon />} label="Video from link" onSelect={() => void addVideoFromUrl()} />
+            <MenuItem icon={<YoutubeIcon />} label="YouTube video" onSelect={() => void addYoutube()} />
+            <MenuSeparator />
+            <MenuItem
+              icon={<QuoteIcon />}
+              label="Quote"
+              checked={state.blockquote}
+              onSelect={() => setBlock(state.blockquote ? "paragraph" : "blockquote")}
+            />
+            <MenuItem
+              icon={<CodeBlockIcon />}
+              label="Code block"
+              checked={state.codeBlock}
+              onSelect={() => setBlock(state.codeBlock ? "paragraph" : "codeBlock")}
+            />
+            <MenuItem icon={<DividerIcon />} label="Divider line" onSelect={() => editor.chain().focus().setHorizontalRule().run()} />
+          </ToolbarMenu>
+        </div>
+      </ToolbarMenus>
     </div>
   );
 }

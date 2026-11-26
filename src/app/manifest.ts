@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Instant shared notes and files. Write together live and share anything with a link.",
     start_url: "/",
     display: "standalone",
-    background_color: "#cbd3dc",
+    background_color: "#e4e9ee",
     theme_color: "#ff5c35",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },

@@ -376,7 +376,7 @@ export function Notepad({ noteId }: NotepadProps) {
             type="button"
             onClick={() => void copyShareLink()}
             aria-label="Copy share link"
-            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-3 text-sm sm:px-4 font-semibold text-white shadow-[0_10px_24px_rgba(255,92,53,0.28)] transition hover:brightness-105"
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-3 text-sm sm:px-4 font-semibold text-white transition hover:brightness-105"
           >
             {copied ? <CheckIcon className="h-4 w-4" /> : <LinkIcon className="h-4 w-4" />}
             <span className="hidden min-[400px]:inline">{copied ? "Copied" : "Share"}</span>
@@ -399,7 +399,7 @@ export function Notepad({ noteId }: NotepadProps) {
         <nav
           data-kb-hide
           aria-label="Note sections"
-          className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
+          className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
         >
           {(
             [
@@ -419,7 +419,7 @@ export function Notepad({ noteId }: NotepadProps) {
                 }}
                 aria-current={selected ? "page" : undefined}
                 className={`flex flex-1 items-center gap-2.5 rounded-2xl px-3 py-2 text-left transition md:flex-none md:py-2.5 ${
-                  selected ? "bg-strong text-on-strong shadow-sm" : "text-ink-muted hover:bg-paper hover:text-ink"
+                  selected ? "bg-strong text-on-strong" : "text-ink-muted hover:bg-paper hover:text-ink"
                 }`}
               >
                 <NavIcon view={item.id} />

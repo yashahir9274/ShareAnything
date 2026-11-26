@@ -84,7 +84,7 @@ export function SharedFileView({ fileId }: { fileId: string }) {
                   </button>
                   <a
                     href={fileRawUrl(state.file.id, true)}
-                    className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(255,92,53,0.25)] transition hover:brightness-105"
+                    className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-white transition hover:brightness-105"
                   >
                     Download
                   </a>

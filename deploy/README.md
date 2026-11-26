@@ -33,10 +33,16 @@ curl -fsS http://127.0.0.1:3020/healthz
 - Record is already created for `shareanything.yashkumarram.com`
 
 ## GitHub Actions secrets
+After `gh auth login`, from the repo root:
+
+```powershell
+powershell -File deploy/setup-github-secrets.ps1
+```
+
 | Secret | Value |
 | --- | --- |
-| `SSH_HOST` | server public IP |
+| `SSH_HOST` | `137.23.57.199` |
 | `SSH_USER` | `ubuntu` |
-| `SSH_PRIVATE_KEY` | deploy private key |
+| `SSH_PRIVATE_KEY` | Oracle SSH private key |
 | `SSH_PORT` | `22` (optional) |
 | `DEPLOY_PATH` | `/home/ubuntu/shareanything` (optional) |

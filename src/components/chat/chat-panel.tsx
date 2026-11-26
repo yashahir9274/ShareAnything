@@ -80,6 +80,12 @@ export function NotificationToggle({ compact = false }: { compact?: boolean }) {
   if (state === "unsupported") return null;
 
   async function toggle() {
+    if (state === "install") {
+      notify(
+        "On iPhone and iPad, notifications only work from the Home Screen app: tap Share (the square with an arrow) → Add to Home Screen, open ShareAnything from there, then tap this bell.",
+      );
+      return;
+    }
     if (state === "on") {
       disableNotifications();
       notify("Notifications turned off");
@@ -87,7 +93,7 @@ export function NotificationToggle({ compact = false }: { compact?: boolean }) {
     }
     const result = await enableNotifications();
     if (result === "on") {
-      notify("Notifications are on — you should see a test notification now. You’ll get them while this note is in a background tab or another app.");
+      notify("Notifications are on — you should see a test notification now. You’ll be told about new messages and files even when this note is closed.");
     } else if (result === "blocked") {
       notify(
         "Notifications are blocked for this site. Click the icon left of the address bar → Notifications → Allow, then click the bell again.",
@@ -110,6 +116,8 @@ export function NotificationToggle({ compact = false }: { compact?: boolean }) {
         ? "Notifications blocked — click for how to allow them"
         : state === "insecure"
           ? "Notifications need https://"
+          : state === "install"
+            ? "Notifications on iPhone: add to Home Screen first"
           : "Turn on notifications";
   return (
     <button

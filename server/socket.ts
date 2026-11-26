@@ -20,8 +20,11 @@ import {
   openNote,
   setNotePassword,
   unlockNote,
+  noteLabel,
   validatePassword,
 } from "./note-store";
+import { addSubscription, cleanSubscription, clearSubscriptions, pushPublicKey, removeSubscription, sendPush } from "./push";
+import type { PushPayload } from "../src/lib/push-types";
 import { FileError, deleteFile, fileEvents, listFiles, renameFile } from "./file-store";
 import { isValidFileId, type FileEvent } from "../src/lib/files";
 import {
@@ -41,6 +44,8 @@ type SocketData = {
   grants: Map<string, number | null>;
   /** "Lock again after" timers per note. */
   timers: Map<string, NodeJS.Timeout>;
+  /** Notes this connection is looking at right now (page visible and focused). */
+  looking: Set<string>;
 };
 
 /** setTimeout can't wait longer than ~24.8 days; longer waits re-check when they fire. */
@@ -129,6 +134,38 @@ export function attachSocketServer(httpServer: HttpServer) {
     broadcastPresence(noteId);
   }
 
+  // ---- push notifications (people who aren't looking at the note) ----
+  /** People with the note open and in front of them: they see it live, so no push. */
+  async function lookingUserIds(noteId: string) {
+    const ids = new Set<string>();
+    const entries = presence.get(noteId);
+    if (!entries) return ids;
+    for (const other of (await io.in(roomName(noteId)).fetchSockets()) as unknown as AppSocket[]) {
+      const user = entries.get(other.id);
+      if (user && other.data.looking?.has(noteId)) ids.add(user.id);
+    }
+    return ids;
+  }
+
+  async function notifyNote(noteId: string, actorId: string | undefined, kind: "chat" | "files", body: string) {
+    try {
+      const skip = await lookingUserIds(noteId);
+      if (actorId) skip.add(actorId);
+      const label = await noteLabel(noteId);
+      const base = (process.env.PUBLIC_URL ?? "").replace(/\/+$/, "");
+      const payload: PushPayload = {
+        title: kind === "chat" ? `New message · ${label}` : `New file · ${label}`,
+        body,
+        tag: `${kind}:${noteId}`,
+        url: `${base}/${noteId}#${kind}`,
+        topic: `${kind}-${noteId}`.slice(0, 32),
+      };
+      await sendPush(noteId, skip, payload);
+    } catch (error) {
+      console.warn("push notify failed", (error as Error).message);
+    }
+  }
+
   // Chat send limit: 12 messages per 10 seconds per connection.
   const sendLog = new Map<string, number[]>();
   function allowSend(socketId: string) {
@@ -204,6 +241,7 @@ export function attachSocketServer(httpServer: HttpServer) {
     socket.data.access = new Set();
     socket.data.grants = new Map();
     socket.data.timers = new Map();
+    socket.data.looking = new Set();
     // Only trust X-Forwarded-For behind your own reverse proxy (TRUST_PROXY=1); otherwise
     // anyone could send a fake one to dodge the unlock rate limit.
     const forwarded =
@@ -294,6 +332,11 @@ export function attachSocketServer(httpServer: HttpServer) {
         }
         try {
           const result = await setNotePassword(noteId, password, relockMinutes);
+          // A new password: others must unlock (and opt in to notifications) again.
+          if (result.passwordChanged) {
+            const me = presence.get(noteId)?.get(socket.id);
+            await clearSubscriptions(noteId, me?.id);
+          }
           // The person changing it stays in, with a fresh unlock.
           socket.data.grants.set(noteId, clearing ? null : result.issuedAt);
           await scheduleExpiry(socket, noteId);
@@ -417,6 +460,16 @@ export function attachSocketServer(httpServer: HttpServer) {
             message,
           } satisfies { noteId: string; message: ChatMessage });
           reply({ ok: true, message });
+          // Never the text — only who sent something.
+          const fileCount = attachments.length;
+          void notifyNote(
+            input.noteId,
+            author.id,
+            "chat",
+            fileCount
+              ? `${author.name} sent ${fileCount === 1 ? "a file" : `${fileCount} files`}`
+              : `${author.name} sent a message`,
+          );
         } catch (error) {
           if (error instanceof ChatError) return reply({ ok: false, error: error.message });
           console.error("note:chat-send failed", error);
@@ -432,11 +485,59 @@ export function attachSocketServer(httpServer: HttpServer) {
       socket.to(roomName(input.noteId)).emit("note:typing", { noteId: input.noteId, user } satisfies TypingEvent);
     });
 
+    socket.on("note:looking", (input: { noteId?: unknown; looking?: unknown }) => {
+      if (!hasAccess(socket, input?.noteId)) return;
+      if (input.looking === true) socket.data.looking.add(input.noteId);
+      else socket.data.looking.delete(input.noteId);
+    });
+
+    socket.on("push:key", async (_input: unknown, ack: unknown) => {
+      const reply = safeAck<object>(ack);
+      try {
+        reply({ ok: true, key: await pushPublicKey() });
+      } catch (error) {
+        console.error("push:key failed", error);
+        reply({ ok: false, error: "Push isn’t available" });
+      }
+    });
+
+    socket.on(
+      "note:push-subscribe",
+      async (input: { noteId?: unknown; userId?: unknown; subscription?: unknown }, ack: unknown) => {
+        const reply = safeAck<object>(ack);
+        if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
+        const subscription = cleanSubscription(input.subscription);
+        const userId = input.userId;
+        if (!subscription || typeof userId !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(userId)) {
+          return reply({ ok: false, error: "Invalid subscription" });
+        }
+        try {
+          await addSubscription(input.noteId, userId, subscription);
+          reply({ ok: true });
+        } catch (error) {
+          console.error("note:push-subscribe failed", error);
+          reply({ ok: false, error: "Couldn’t turn on notifications" });
+        }
+      },
+    );
+
+    socket.on("note:push-unsubscribe", async (input: { noteId?: unknown; endpoint?: unknown }, ack: unknown) => {
+      const reply = safeAck<object>(ack);
+      if (!isValidNoteId(input?.noteId) || typeof input.endpoint !== "string") return reply({ ok: false });
+      try {
+        await removeSubscription(input.noteId, input.endpoint);
+        reply({ ok: true });
+      } catch {
+        reply({ ok: false });
+      }
+    });
+
     socket.on("note:leave", async (noteId: unknown) => {
       if (!isValidNoteId(noteId)) return;
       clearTimer(socket, noteId);
       socket.data.access.delete(noteId);
       socket.data.grants.delete(noteId);
+      socket.data.looking.delete(noteId);
       await socket.leave(roomName(noteId));
       setPresence(socket.id, noteId, null);
     });
@@ -454,6 +555,10 @@ export function attachSocketServer(httpServer: HttpServer) {
   // Uploads arrive over HTTP; tell everyone viewing the note.
   fileEvents.on("event", (event: FileEvent) => {
     io.to(roomName(event.noteId)).emit("note:file-event", event);
+    // Files sent in chat are announced by the chat message instead.
+    if (event.type === "added" && !event.viaChat) {
+      void notifyNote(event.noteId, event.uploaderId, "files", `${event.file.uploadedBy ?? "Someone"} shared a file`);
+    }
   });
 
   return io;

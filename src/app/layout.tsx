@@ -3,6 +3,7 @@ import { Fraunces, IBM_Plex_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import { DialogProvider } from "@/components/dialogs";
 import { SceneBackground } from "@/components/scene-background";
 import { ThemeWatcher } from "@/components/theme-watcher";
+import { ViewportWatcher } from "@/components/viewport-watcher";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme-boot";
 import "./globals.css";
 
@@ -50,6 +51,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#ff5c35",
+  // Android: the on-screen keyboard shrinks the page instead of covering it.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -68,6 +71,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col font-sans text-ink" suppressHydrationWarning>
         <ThemeWatcher />
+        <ViewportWatcher />
         <SceneBackground />
         <DialogProvider>{children}</DialogProvider>
       </body>

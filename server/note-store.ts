@@ -468,3 +468,10 @@ export async function setNotePassword(
   const issuedAt = Date.now();
   return { token: await tokenFor(note, issuedAt), issuedAt, passwordChanged };
 }
+
+/** How a notification names the note: its title, or "/id" for untitled or password-protected notes. */
+export async function noteLabel(id: string): Promise<string> {
+  const note = await getLive(id);
+  const title = note.password ? "" : note.doc.getText(TITLE_FIELD).toString().trim();
+  return title ? title.slice(0, 60) : `/${id}`;
+}

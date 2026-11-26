@@ -9,6 +9,7 @@ import { ChatPanel } from "@/components/chat/chat-panel";
 import { useDialogs } from "@/components/dialogs";
 import type { ChatMessage } from "@/lib/chat";
 import { useIdentity } from "@/lib/identity";
+import { useNotePush } from "@/lib/use-note-push";
 import { askOnceForNotifications, notifyIfAway, pageIsAway, prepareNotifications } from "@/lib/notifications";
 import { useNoteChat } from "@/lib/use-note-chat";
 import { CheckIcon, LinkIcon, LockIcon, PlusIcon, TypeIcon } from "@/components/icons";
@@ -183,6 +184,7 @@ export function Notepad({ noteId }: NotepadProps) {
   const filesState = useNoteFiles(noteId, access === "open", connected, onOthersUpload);
   const { upload } = filesState;
   const chat = useNoteChat({ noteId, enabled: access === "open", connected, identity, onMessage: onChatMessage });
+  useNotePush({ noteId, enabled: access === "open", connected, userId: identity?.id });
 
   // Someone else edited the document while you're away: at most one notification per 5 minutes.
   const lastDocNotify = useRef(0);
@@ -332,7 +334,7 @@ export function Notepad({ noteId }: NotepadProps) {
 
   return (
     <div className="app-frame atmosphere relative flex flex-col">
-      <header className="relative z-30 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-5 pb-3 pt-4 sm:px-8 sm:pt-5">
+      <header data-kb-hide className="relative z-30 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-5 pb-3 pt-4 sm:px-8 sm:pt-5">
         <NewNoteLink className="group min-w-0">
           <Brand tagline="Write together live. Share anything." />
         </NewNoteLink>
@@ -395,6 +397,7 @@ export function Notepad({ noteId }: NotepadProps) {
 
         <div className="flex min-h-0 flex-1 flex-col gap-2.5 md:flex-row md:gap-4">
         <nav
+          data-kb-hide
           aria-label="Note sections"
           className="flex shrink-0 gap-1 rounded-[20px] border border-line bg-surface/95 p-1 shadow-[0_10px_30px_rgba(11,20,32,0.06)] md:w-52 md:flex-col md:gap-1.5 md:rounded-[24px] md:p-2"
         >
@@ -578,7 +581,7 @@ export function Notepad({ noteId }: NotepadProps) {
         </section>
         </div>
 
-        <footer className="mt-2 flex shrink-0 items-center justify-between gap-2 px-1 text-xs text-ink/75 sm:mt-3 sm:text-sm">
+        <footer data-kb-hide className="mt-2 flex shrink-0 items-center justify-between gap-2 px-1 text-xs text-ink/75 sm:mt-3 sm:text-sm">
           <p className="truncate">
             {view === "files"
               ? "Files are shared with everyone who has this note’s link — each file also has its own link."

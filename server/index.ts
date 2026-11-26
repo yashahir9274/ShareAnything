@@ -1,4 +1,6 @@
+import { readFileSync } from "fs";
 import { createServer } from "http";
+import path from "path";
 import next from "next";
 import { handleFileRequest } from "./file-http";
 import { handleNewNoteRequest } from "./new-note-http";
@@ -16,6 +18,10 @@ const httpServer = createServer();
 const app = next({ dev, hostname: host ?? "localhost", port, httpServer });
 const handle = app.getRequestHandler();
 
+// The service worker must never be cached (by the browser or Cloudflare), or phones keep
+// an old one after a deploy — e.g. one that can't receive push notifications.
+const serviceWorker = readFileSync(path.join(process.cwd(), "public", "sw.js"));
+
 app
   .prepare()
   .then(() => {
@@ -27,6 +33,16 @@ app
       if (req.url === "/healthz") {
         res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
         res.end("ok");
+        return;
+      }
+      if (req.url === "/sw.js" || req.url?.startsWith("/sw.js?")) {
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store, max-age=0",
+          "CDN-Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(req.method === "HEAD" ? undefined : dev ? readFileSync(path.join(process.cwd(), "public", "sw.js")) : serviceWorker);
         return;
       }
       // Media manager uploads/downloads (streamed; they never touch Next.js).

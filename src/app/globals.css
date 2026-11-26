@@ -104,15 +104,47 @@ body {
   overflow: hidden;
 }
 
-/* Very short screens (landscape phones): fall back to normal page scrolling. */
-@media (max-height: 420px) {
+/* Phones/tablets: exactly the visible area (above the on-screen keyboard). Set by ViewportWatcher. */
+@media (pointer: coarse) {
   .app-frame {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--app-top, 0px);
+    height: var(--app-height, 100dvh);
+  }
+}
+
+/* While typing on a phone, make room: hide the big header, the section tabs and the hint line. */
+@media (pointer: coarse) and (max-width: 1023px) {
+  html.kb-open [data-kb-hide] {
+    display: none;
+  }
+  html.kb-open .app-frame main {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+}
+
+/* Very short screens (landscape phones, not the keyboard): fall back to normal page scrolling. */
+@media (max-height: 420px) and (orientation: landscape) {
+  html:not(.kb-open) .app-frame {
+    position: relative;
+    top: auto;
     height: auto;
     min-height: 100dvh;
     overflow: visible;
   }
-  .app-frame .editor-scroll {
+  html:not(.kb-open) .app-frame .editor-scroll {
     overflow: visible;
+  }
+}
+
+/* iPhone zooms the page when a field under 16px gets focus; keep fields at 16px on touch screens. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
   }
 }
 

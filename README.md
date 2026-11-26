@@ -39,7 +39,11 @@ Open [http://localhost:3000](http://localhost:3000), then open the same `/...` l
 Production: `npm run build` then `npm start`.
 
 Docker / CloudPanel production (subdomain + CI): see [deploy/README.md](deploy/README.md).
-`docker compose up -d --build` serves the app on `127.0.0.1:3000`.
+
+```bash
+git push origin main                 # GitHub only
+git branch -f deploy HEAD && git push origin main deploy   # GitHub + live server
+```
 
 ## Configuration
 

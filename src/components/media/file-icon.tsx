@@ -74,7 +74,18 @@ function Glyph({ kind }: { kind: FileKind }) {
   }
 }
 
-export function FileIcon({ kind, name, className = "" }: { kind: FileKind; name: string; className?: string }) {
+export function FileIcon({
+  kind,
+  name,
+  className = "",
+  showExtension = true,
+}: {
+  kind: FileKind;
+  name: string;
+  className?: string;
+  /** Small icons (list rows) skip the badge; the name already shows the extension. */
+  showExtension?: boolean;
+}) {
   const style = KIND_STYLE[kind];
   const ext = fileExtension(name).slice(0, 5);
   return (
@@ -82,7 +93,7 @@ export function FileIcon({ kind, name, className = "" }: { kind: FileKind; name:
       className={`relative flex items-center justify-center rounded-2xl border border-line/70 ${style.bg} ${style.fg} ${className}`}
     >
       <Glyph kind={kind} />
-      {ext ? (
+      {ext && showExtension ? (
         <span className="absolute bottom-1.5 right-1.5 rounded-md bg-white/90 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase text-ink">
           {ext}
         </span>

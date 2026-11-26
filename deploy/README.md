@@ -4,7 +4,20 @@
 - Docker Compose app on `127.0.0.1:3020` (container still listens on 3000)
 - CloudPanel reverse proxy + SSL
 - Cloudflare DNS A record → origin `137.23.57.199`
-- GitHub Actions deploys on push to `main`
+- GitHub Actions: push `main` = GitHub only; push `deploy` = upload to server
+
+## Push commands
+
+```bash
+# Save code to GitHub only (no server update)
+git push origin main
+
+# Save to GitHub AND deploy to CloudPanel
+git branch -f deploy HEAD
+git push origin main deploy
+```
+
+`git push origin main deploy` pushes both branches; Actions deploys only when `deploy` moves.
 
 ## One-time server setup
 ```bash
@@ -28,9 +41,10 @@ curl -fsS http://127.0.0.1:3020/healthz
 - Type: A  
 - Name: `shareanything`  
 - Content: `137.23.57.199`  
-- Proxy: DNS-only (grey cloud) is preferred for Socket.io live sync  
-- If you orange-cloud it later: SSL/TLS **Full (strict)** + Network → WebSockets on  
-- Record is already created for `shareanything.yashkumarram.com`
+- Proxy: **Proxied** (orange cloud) — hides origin IP like your other subdomains  
+- SSL/TLS: **Full (strict)** (origin has Let’s Encrypt)  
+- Network → **WebSockets** must stay on for live sync  
+- Record: `shareanything.yashkumarram.com` → `137.23.57.199`
 
 ## GitHub Actions secrets
 After `gh auth login`, from the repo root:

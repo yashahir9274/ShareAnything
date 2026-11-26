@@ -60,7 +60,7 @@ export function FilePreview({ file }: { file: NoteFile }) {
 }
 
 /** Small thumbnail for grid cards. */
-export function FileThumb({ file }: { file: NoteFile }) {
+export function FileThumb({ file, compact = false }: { file: NoteFile; compact?: boolean }) {
   if (file.kind === "image") {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- user uploads
@@ -71,7 +71,7 @@ export function FileThumb({ file }: { file: NoteFile }) {
         decoding="async"
         className={
           file.name.toLowerCase().endsWith(".svg")
-            ? "h-full w-full bg-white object-contain p-6"
+            ? `h-full w-full bg-white object-contain ${compact ? "p-1" : "p-6"}`
             : "h-full w-full object-cover"
         }
       />
@@ -82,8 +82,12 @@ export function FileThumb({ file }: { file: NoteFile }) {
       <div className="relative h-full w-full bg-ink">
         <video src={`${fileRawUrl(file.id)}#t=0.5`} muted preload="metadata" className="h-full w-full object-cover opacity-90" />
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white shadow-lg">
-            <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4" fill="currentColor" aria-hidden>
+          <span
+            className={`flex items-center justify-center rounded-full bg-accent text-white shadow-lg ${
+              compact ? "h-5 w-5" : "h-10 w-10"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className={`ml-0.5 ${compact ? "h-2.5 w-2.5" : "h-4 w-4"}`} fill="currentColor" aria-hidden>
               <path d="M8 5v14l11-7z" />
             </svg>
           </span>

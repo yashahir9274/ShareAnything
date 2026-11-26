@@ -1,8 +1,11 @@
 name: Deploy ShareAnything
 
+# git push origin main          → GitHub only (build/lint check)
+# git push origin main deploy   → build + upload to CloudPanel
+# (keep local branch `deploy` pointing at the commit you want live)
 on:
   push:
-    branches: [main]
+    branches: [main, deploy]
   workflow_dispatch:
 
 concurrency:
@@ -36,7 +39,7 @@ jobs:
     name: Deploy to CloudPanel
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/deploy' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 

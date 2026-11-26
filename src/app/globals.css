@@ -511,3 +511,27 @@ body {
     animation: none;
   }
 }
+
+/* ---- Files: reveal card/row actions on hover ----
+   Only on devices that can hover; touch screens always show them. */
+@media (hover: hover) {
+  .hover-reveal {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  /* Keyboard focus also reveals them (:focus-visible), but a mouse click doesn't,
+     so they hide again as soon as the pointer leaves, e.g. after closing a preview. */
+  .group:hover .hover-reveal,
+  .group:focus-visible .hover-reveal,
+  .group:has(:focus-visible) .hover-reveal {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  /* The "View" overlay would cover the thumbnail on touch screens; tapping the card already opens it. */
+  .group .hover-overlay {
+    display: none;
+  }
+}

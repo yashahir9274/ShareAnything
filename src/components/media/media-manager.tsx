@@ -104,7 +104,28 @@ function IconButton({
   );
 }
 
+/** What "View" means for each kind of file. */
+function viewLabel(kind: FileKind) {
+  switch (kind) {
+    case "image":
+      return "View image";
+    case "video":
+      return "Play video";
+    case "audio":
+      return "Play audio";
+    case "pdf":
+      return "Open PDF";
+    case "code":
+      return "View code";
+    case "text":
+      return "View text";
+    default:
+      return "View file";
+  }
+}
+
 const ICONS = {
+  view: <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
   share: <><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" /></>,
   download: <path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" />,
   insert: <path d="M12 5v14M5 12h14" />,
@@ -224,9 +245,13 @@ export function MediaManager({
 
   const usedPercent = usage ? Math.min(100, (usage.used / usage.quota) * 100) : 0;
 
-  function actionsFor(file: NoteFile, inPreview = false) {
+  /** inPreview: shown inside the preview (no View). inGrid: the card's centre label is the View action. */
+  function actionsFor(file: NoteFile, inPreview = false, inGrid = false) {
     return (
       <>
+        {inPreview || inGrid ? null : (
+          <IconButton label={viewLabel(file.kind)} onClick={() => setPreviewId(file.id)}>{ICONS.view}</IconButton>
+        )}
         <IconButton label="Share" onClick={() => setShareId(file.id)}>{ICONS.share}</IconButton>
         <IconButton label="Download" href={fileRawUrl(file.id, true)} download>{ICONS.download}</IconButton>
         {isEmbeddableKind(file.kind) ? (
@@ -418,8 +443,16 @@ export function MediaManager({
                   }}
                   className="group relative block w-full cursor-pointer overflow-hidden rounded-2xl border border-line bg-white text-left shadow-[0_1px_0_rgba(11,20,32,0.03)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(11,20,32,0.10)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  <div className="aspect-[4/3] overflow-hidden">
+                  <div className="relative aspect-[4/3] overflow-hidden">
                     <FileThumb file={file} />
+                    <span className="hover-reveal hover-overlay pointer-events-none absolute inset-0 flex items-center justify-center pb-8">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-ink shadow-md">
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          {ICONS.view}
+                        </svg>
+                        {viewLabel(file.kind)}
+                      </span>
+                    </span>
                   </div>
                   <div className="px-3 py-2.5">
                     <p className="truncate text-sm font-medium text-ink" title={file.name}>
@@ -429,9 +462,9 @@ export function MediaManager({
                       {kindLabel(file.kind)} · {formatBytes(file.size)} · {timeAgo(file.createdAt)}
                     </p>
                   </div>
-                  <div className="absolute right-2 top-2 flex gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                    <IconButton label="Share" onClick={() => setShareId(file.id)}>{ICONS.share}</IconButton>
-                    <IconButton label="Download" href={fileRawUrl(file.id, true)} download>{ICONS.download}</IconButton>
+                  {/* One row along the bottom of the thumbnail, shown on hover (always on touch screens). */}
+                  <div className="hover-reveal absolute inset-x-0 top-0 flex aspect-[4/3] items-end justify-center gap-1 bg-gradient-to-t from-ink/55 via-transparent to-transparent p-2">
+                    {actionsFor(file, false, true)}
                   </div>
                 </div>
               </li>
@@ -442,17 +475,23 @@ export function MediaManager({
             {visible.map((file) => (
               <li
                 key={file.id}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition hover:bg-paper-elevated"
+                className="group flex cursor-pointer items-center gap-3 px-3 py-2.5 transition hover:bg-paper-elevated"
                 onClick={() => setPreviewId(file.id)}
               >
-                <FileIcon kind={file.kind} name={file.name} className="h-10 w-10 shrink-0" />
+                {isEmbeddableKind(file.kind) ? (
+                  <div className="relative h-10 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper">
+                    <FileThumb file={file} compact />
+                  </div>
+                ) : (
+                  <FileIcon kind={file.kind} name={file.name} showExtension={false} className="h-10 w-14 shrink-0 rounded-xl" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{file.name}</p>
                   <p className="text-[11px] text-ink-muted">
                     {kindLabel(file.kind)} · {formatBytes(file.size)} · {timeAgo(file.createdAt)}
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-1">{actionsFor(file)}</div>
+                <div className="hover-reveal flex shrink-0 gap-1">{actionsFor(file)}</div>
               </li>
             ))}
           </ul>

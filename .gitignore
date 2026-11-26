@@ -23,7 +23,11 @@
 # misc
 .DS_Store
 *.pem
+*.key
+!public/**/*.key
 .data
+deploy/*.local.*
+deploy/*.tgz
 
 # debug
 npm-debug.log*

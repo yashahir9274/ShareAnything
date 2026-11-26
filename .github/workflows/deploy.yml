@@ -1,0 +1,79 @@
+name: Deploy ShareAnything
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  deploy:
+    name: Deploy to CloudPanel
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "${PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+
+      - name: Sync and restart container
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT="${SSH_PORT:-22}"
+          PATH_ON_SERVER="${DEPLOY_PATH:-/home/ubuntu/shareanything}"
+          RSYNC_RSH="ssh -p ${PORT} -o StrictHostKeyChecking=yes"
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.next' \
+            --exclude '.data' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            -e "$RSYNC_RSH" \
+            ./ "${SSH_USER}@${SSH_HOST}:${PATH_ON_SERVER}/"
+
+          ssh -p "${PORT}" "${SSH_USER}@${SSH_HOST}" \
+            "mkdir -p '${PATH_ON_SERVER}' && cd '${PATH_ON_SERVER}' && docker compose up -d --build --remove-orphans && docker compose ps"

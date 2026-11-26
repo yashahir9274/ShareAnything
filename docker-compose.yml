@@ -1,0 +1,37 @@
+# ShareAnything production stack — one container, persistent note/media data.
+# Behind CloudPanel nginx at https://shareanything.yashkumarram.com
+
+services:
+  app:
+    build: .
+    image: shareanything:latest
+    container_name: shareanything
+    restart: unless-stopped
+    ports:
+      # 3000 is already used on this CloudPanel host (shows2dj); bind a free port.
+      - "127.0.0.1:3020:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      PUBLIC_URL: "https://shareanything.yashkumarram.com"
+      TRUST_PROXY: "1"
+      SHAREANYTHING_MAX_FILE_MB: "${SHAREANYTHING_MAX_FILE_MB:-100}"
+      SHAREANYTHING_NOTE_QUOTA_MB: "${SHAREANYTHING_NOTE_QUOTA_MB:-500}"
+    volumes:
+      - shareanything-data:/app/.data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+volumes:
+  shareanything-data:

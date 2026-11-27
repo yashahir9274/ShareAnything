@@ -18,6 +18,10 @@ services:
       TRUST_PROXY: "1"
       SHAREANYTHING_MAX_FILE_MB: "${SHAREANYTHING_MAX_FILE_MB:-100}"
       SHAREANYTHING_NOTE_QUOTA_MB: "${SHAREANYTHING_NOTE_QUOTA_MB:-500}"
+      # GIFs in chat (free key from developers.giphy.com). Set in the server's .env;
+      # the deploy workflow writes it there from the GIPHY_API_KEY GitHub secret.
+      GIPHY_API_KEY: "${GIPHY_API_KEY:-}"
+      GIF_RATING: "${GIF_RATING:-r}"
     volumes:
       - shareanything-data:/app/.data
     healthcheck:

@@ -10,6 +10,7 @@ import {
   type ChatReplyRef,
   type ChatUser,
 } from "../src/lib/chat";
+import type { ChatGif } from "../src/lib/gifs";
 import { isValidNoteId } from "../src/lib/note-types";
 
 /** Per-note chat history, stored next to the note as .data/notes/<id>.chat.json. */
@@ -75,11 +76,12 @@ export async function addMessage(
   mentionsInput?: unknown,
   replyToId?: unknown,
   ownerSecret?: unknown,
+  gif?: ChatGif | null,
 ): Promise<ChatMessage> {
   if (typeof text !== "string") throw new ChatError("Invalid message");
   // Keep line breaks, drop other control characters.
   const cleaned = text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").trim();
-  if (!cleaned && !attachments.length) throw new ChatError("Message is empty");
+  if (!cleaned && !attachments.length && !gif) throw new ChatError("Message is empty");
   if (cleaned.length > CHAT_LIMITS.textMax) {
     throw new ChatError(`Messages can be up to ${CHAT_LIMITS.textMax} characters`);
   }
@@ -92,6 +94,7 @@ export async function addMessage(
       text: cleaned,
       createdAt: new Date().toISOString(),
       ...(attachments.length ? { attachments } : {}),
+      ...(gif ? { gif } : {}),
     };
     const mentions = cleanMentions(mentionsInput, cleaned, author.id);
     if (mentions.length) message.mentions = mentions;
@@ -115,6 +118,7 @@ function replyRef(original: ChatMessage): ChatReplyRef {
     author: original.author,
     text: text.length > CHAT_LIMITS.replySnippetMax ? `${text.slice(0, CHAT_LIMITS.replySnippetMax - 1)}…` : text,
     ...(original.attachments?.length ? { files: original.attachments.length } : {}),
+    ...(original.gif ? { gif: true } : {}),
   };
 }
 
@@ -214,7 +218,7 @@ export async function editMessage(
     const messages = [...(await load(noteId))];
     const index = ownMessage(messages, messageId, secret, CHAT_LIMITS.editWindowMs, "edit");
     const message = messages[index];
-    if (!cleaned && !message.attachments?.length) throw new ChatError("A message can’t be empty — delete it instead");
+    if (!cleaned && !message.attachments?.length && !message.gif) throw new ChatError("A message can’t be empty — delete it instead");
     if (cleaned === message.text) return [publicMessage(message)];
     const updated: ChatMessage = { ...message, text: cleaned, editedAt: new Date().toISOString() };
     const mentions = cleanMentions(mentionsInput, cleaned, message.author.id);

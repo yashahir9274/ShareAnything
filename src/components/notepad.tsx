@@ -165,7 +165,9 @@ export function Notepad({ noteId }: NotepadProps) {
           ? `${message.author.name} mentioned you`
           : repliedToMe
             ? `${message.author.name} replied to you`
-            : fileCount
+            : message.gif && !message.text
+              ? `${message.author.name} sent a GIF`
+              : fileCount
           ? `${message.author.name} sent ${fileCount === 1 ? "a file" : `${fileCount} files`}`
           : `${message.author.name} sent a message`,
         tag: `chat:${noteId}`,

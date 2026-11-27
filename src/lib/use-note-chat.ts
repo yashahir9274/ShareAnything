@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ChatUser, PresenceList, TypingEvent } from "@/lib/chat";
+import type { ChatGif } from "@/lib/gifs";
 import type { Identity } from "@/lib/identity";
 import { getSocket } from "@/lib/socket";
 
@@ -111,7 +112,7 @@ export function useNoteChat(options: {
   }, [typing]);
 
   const send = useCallback(
-    (text: string, attachmentIds: string[] = [], mentions: ChatUser[] = [], replyTo?: string) =>
+    (text: string, attachmentIds: string[] = [], mentions: ChatUser[] = [], replyTo?: string, gif?: ChatGif) =>
       new Promise<string | null>((resolve) => {
         const me = identityRef.current;
         if (!me) return resolve("Not ready yet");
@@ -124,6 +125,7 @@ export function useNoteChat(options: {
             ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
             ...(mentions.length ? { mentions } : {}),
             ...(replyTo ? { replyTo } : {}),
+            ...(gif ? { gif } : {}),
             // Proves later that this is your message (for editing / deleting it).
             ...(me.secret ? { secret: me.secret } : {}),
           },

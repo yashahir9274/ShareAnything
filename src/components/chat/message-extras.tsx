@@ -239,9 +239,10 @@ export function ReactionChips({
   );
 }
 
-function replySummary(reply: Pick<ChatReplyRef, "text" | "files" | "deleted">) {
+function replySummary(reply: Pick<ChatReplyRef, "text" | "files" | "deleted" | "gif">) {
   if (reply.deleted) return "🚫 This message was deleted";
   if (reply.text) return reply.text;
+  if (reply.gif) return "🎞️ GIF";
   if (reply.files) return reply.files === 1 ? "📎 A file" : `📎 ${reply.files} files`;
   return "Message";
 }
@@ -298,7 +299,7 @@ export function ReplyingTo({
           Replying to {message.author.id === meId ? "yourself" : message.author.name}
         </p>
         <p className="truncate text-ink-muted">
-          {replySummary({ text: message.text.replace(/\s+/g, " "), files: message.attachments?.length })}
+          {replySummary({ text: message.text.replace(/\s+/g, " "), files: message.attachments?.length, gif: Boolean(message.gif) })}
         </p>
       </div>
       <button

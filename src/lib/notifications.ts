@@ -225,9 +225,43 @@ export function useNotifyState(): NotifyState {
   return useSyncExternalStore(subscribe, getNotifyState, () => "off" as NotifyState);
 }
 
-/** True when the person can't currently see the page (other tab, other app, minimised). */
+/** Someone who hasn't touched the mouse/keyboard for this long counts as away (e.g. walked off, screen locked). */
+export const IDLE_AFTER_MS = 60_000;
+let lastActivity = typeof performance !== "undefined" ? performance.now() : 0;
+if (typeof window !== "undefined") {
+  const mark = () => {
+    lastActivity = performance.now();
+  };
+  for (const type of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"]) {
+    window.addEventListener(type, mark, { passive: true, capture: true });
+  }
+}
+
+/** True when the person can't currently see the page (other tab, other app, minimised) or has been idle a while. */
 export function pageIsAway() {
-  return document.hidden || !document.hasFocus();
+  return document.hidden || !document.hasFocus() || performance.now() - lastActivity > IDLE_AFTER_MS;
+}
+
+/** Sends this browser a real push from the server in ~3 seconds. Resolves to a message for the person. */
+export async function sendTestNotification(
+  emitTest: () => Promise<{ ok: boolean; devices?: number; error?: string }>,
+): Promise<{ ok: boolean; message: string }> {
+  const state = getNotifyState();
+  if (state !== "on") return { ok: false, message: "Turn notifications on first." };
+  const result = await emitTest().catch(() => ({ ok: false, error: "Couldn’t reach the server." }) as { ok: boolean; error?: string; devices?: number });
+  if (!result.ok) return { ok: false, message: result.error ?? "Couldn’t send a test." };
+  if (result.devices) {
+    return { ok: true, message: "Test sent — it arrives in about 3 seconds. Switch to another app or tab to see it." };
+  }
+  // No push subscription (e.g. Brave without push, private window): fall back to a page notification.
+  window.setTimeout(() => {
+    void show({ title: "ShareAnything test", body: "Notifications work while this page is open 🎉", tag: "shareanything:test" });
+  }, 3000);
+  return {
+    ok: false,
+    message:
+      "This browser can only show notifications while the page is open (push isn’t available here). A test will show in 3 seconds.",
+  };
 }
 
 /**

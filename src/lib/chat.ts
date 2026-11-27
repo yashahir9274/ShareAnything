@@ -1,6 +1,7 @@
 /** Chat and presence types shared by client and server. */
 
 import type { FileKind } from "./files";
+import type { ChatGif } from "./gifs";
 
 export const CHAT_LIMITS = {
   textMax: 2000,
@@ -69,6 +70,8 @@ export type ChatMessage = {
   deleted?: boolean;
   /** Whether its author can still edit/delete it (false for old messages from before this existed). */
   ownable?: boolean;
+  /** A GIF sent with the message. */
+  gif?: ChatGif;
 };
 
 export type ChatReaction = { emoji: string; users: ChatUser[] };
@@ -82,6 +85,8 @@ export type ChatReplyRef = {
   files?: number;
   /** The original was deleted for everyone. */
   deleted?: boolean;
+  /** The original was (or had) a GIF. */
+  gif?: boolean;
 };
 
 /** Quick reactions shown when hovering a message. */

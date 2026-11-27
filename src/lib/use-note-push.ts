@@ -23,7 +23,7 @@ export function useNotePush({
 }) {
   const state = useNotifyState();
 
-  // "Looking" = this page is visible and focused. Others' activity then shows live, no push.
+  // "Looking" = this page is visible, focused, and used in the last minute. Others' activity then shows live, no push.
   useEffect(() => {
     if (!enabled || !connected) return;
     const socket = getSocket();
@@ -35,11 +35,24 @@ export function useNotePush({
       socket.emit("note:looking", { noteId, looking });
     }
     report();
+    // Becoming idle has no event: check now and then, and report activity as soon as it happens.
+    const timer = window.setInterval(report, 10_000);
+    let lastPoke = 0;
+    const onActivity = () => {
+      const now = performance.now();
+      if (now - lastPoke < 2000) return;
+      lastPoke = now;
+      report();
+    };
+    const activity = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"];
+    for (const type of activity) window.addEventListener(type, onActivity, { passive: true });
     window.addEventListener("focus", report);
     window.addEventListener("blur", report);
     document.addEventListener("visibilitychange", report);
     window.addEventListener("pagehide", report);
     return () => {
+      window.clearInterval(timer);
+      for (const type of activity) window.removeEventListener(type, onActivity);
       window.removeEventListener("focus", report);
       window.removeEventListener("blur", report);
       document.removeEventListener("visibilitychange", report);

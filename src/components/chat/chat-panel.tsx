@@ -19,6 +19,9 @@ import { CHAT_LIMITS, type ChatMessage, type ChatUser } from "@/lib/chat";
 import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
 import { MessageAttachments, PendingAttachments, type PendingAttachment } from "./chat-attachments";
 import { EmojiPicker } from "./emoji-picker";
+import { NotificationMenu } from "./notification-menu";
+import { GifMessage } from "./gif-picker";
+import type { ChatGif } from "@/lib/gifs";
 import { MentionPicker, MessageText, findMentionQuery, matchMentions } from "./mentions";
 import { isJumboEmoji } from "./fluent-emoji";
 import { ShortcodePicker, emojiForCode, findShortcodeQuery, matchShortcodes } from "./emoji-shortcodes";
@@ -33,7 +36,6 @@ import {
   type MessageMenuItem,
 } from "./message-extras";
 import { setIdentityName, type Identity } from "@/lib/identity";
-import { disableNotifications, enableNotifications, useNotifyState } from "@/lib/notifications";
 import { Avatar, AvatarStack } from "./avatars";
 
 type ChatPanelProps = {
@@ -42,7 +44,13 @@ type ChatPanelProps = {
   online: ChatUser[];
   typing: ChatUser[];
   identity: Identity | null;
-  onSend: (text: string, attachmentIds?: string[], mentions?: ChatUser[], replyTo?: string) => Promise<string | null>;
+  onSend: (
+    text: string,
+    attachmentIds?: string[],
+    mentions?: ChatUser[],
+    replyTo?: string,
+    gif?: ChatGif,
+  ) => Promise<string | null>;
   /** Toggle your emoji reaction on a message. Resolves to an error message or null. */
   onReact: (messageId: string, emoji: string) => Promise<string | null>;
   /** Edit the text of your own message. Resolves to an error message or null. */
@@ -78,76 +86,6 @@ function dayLabel(iso: string) {
 }
 
 /** Turns plain-text URLs into links (rendered as text nodes, so no HTML injection). */
-export function NotificationToggle({ compact = false }: { compact?: boolean }) {
-  const state = useNotifyState();
-  const { notify } = useDialogs();
-  if (state === "unsupported") return null;
-
-  async function toggle() {
-    if (state === "install") {
-      notify(
-        "On iPhone and iPad, notifications only work from the Home Screen app: tap Share (the square with an arrow) → Add to Home Screen, open ShareAnything from there, then tap this bell.",
-      );
-      return;
-    }
-    if (state === "on") {
-      disableNotifications();
-      notify("Notifications turned off");
-      return;
-    }
-    const result = await enableNotifications();
-    if (result === "on") {
-      notify("Notifications are on — you should see a test notification now. You’ll be told about new messages and files even when this note is closed.");
-    } else if (result === "blocked") {
-      notify(
-        "Notifications are blocked for this site. Click the icon left of the address bar → Notifications → Allow, then click the bell again.",
-        "error",
-      );
-    } else if (result === "dismissed") {
-      notify(
-        "The browser didn’t show the permission request (or it was closed). Look for a bell icon in the address bar, choose Allow, then click the bell again.",
-        "error",
-      );
-    } else if (result === "insecure") {
-      notify("Notifications only work on a secure https:// address.", "error");
-    }
-  }
-
-  const label =
-    state === "on"
-      ? "Notifications on (click to turn off)"
-      : state === "blocked"
-        ? "Notifications blocked — click for how to allow them"
-        : state === "insecure"
-          ? "Notifications need https://"
-          : state === "install"
-            ? "Notifications on iPhone: add to Home Screen first"
-          : "Turn on notifications";
-  return (
-    <button
-      type="button"
-      onClick={() => void toggle()}
-      title={label}
-      aria-label={label}
-      aria-pressed={state === "on"}
-      className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition ${
-        state === "on"
-          ? "bg-teal-soft text-teal"
-          : state === "blocked" || state === "insecure"
-            ? "bg-surface text-ink-muted line-through"
-            : "bg-surface text-ink-muted hover:text-ink"
-      }`}
-    >
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden>
-        <path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9" />
-        <path d="M10 20a2 2 0 0 0 4 0" />
-        {state === "on" ? null : <path d="M4 4l16 16" />}
-      </svg>
-      {compact ? null : <span className="hidden sm:inline">{state === "on" ? "Notifying" : "Notify me"}</span>}
-    </button>
-  );
-}
-
 export function ChatPanel({
   messages,
   loaded,
@@ -384,6 +322,20 @@ export function ChatPanel({
     [onAttach, pending.length],
   );
 
+  /** Sends a GIF straight away (as its own message, replying if a reply is in progress). */
+  async function sendGif(gif: ChatGif) {
+    setEmojiOpen(false);
+    setError("");
+    stickToBottom.current = true;
+    const problem = await onSend("", [], [], replyTo?.id, gif);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setReplyTo(null);
+    inputRef.current?.focus();
+  }
+
   function pickEmoji(emoji: string) {
     if (reactTarget) {
       const target = reactTarget;
@@ -455,10 +407,25 @@ export function ChatPanel({
     if (identity?.named) inputRef.current?.focus();
   }, [identity?.named]);
 
+  /** Whether you're at the newest message, and how many messages there were when you last were. */
+  const [atBottom, setAtBottom] = useState(true);
+  const [seenCount, setSeenCount] = useState(0);
+  const unseen = atBottom ? 0 : Math.max(0, rows.length - seenCount);
+
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
-    stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+    const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+    stickToBottom.current = bottom;
+    if (bottom !== atBottom) setAtBottom(bottom);
+    if (bottom && seenCount !== rows.length) setSeenCount(rows.length);
+  }
+
+  function jumpToLatest() {
+    const list = listRef.current;
+    if (!list) return;
+    stickToBottom.current = true;
+    list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }
 
   async function submit(event?: FormEvent) {
@@ -626,7 +593,7 @@ export function ChatPanel({
               </svg>
             </button>
           ) : null}
-          <NotificationToggle />
+          <NotificationMenu noteId={noteId} userId={identity?.id} />
         </div>
       </div>
 
@@ -662,10 +629,10 @@ export function ChatPanel({
               return (
                 <li key={message.id} id={`msg-${message.id}`} className="rounded-2xl">
                   {newDay ? (
-                    <div className="my-3 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
-                      <span className="h-px flex-1 bg-line" />
-                      {dayLabel(message.createdAt)}
-                      <span className="h-px flex-1 bg-line" />
+                    <div className="sticky top-0 z-[5] my-3 flex justify-center">
+                      <span className="rounded-full border border-line bg-surface px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                        {dayLabel(message.createdAt)}
+                      </span>
                     </div>
                   ) : null}
                   <div className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : ""} ${grouped ? "" : "mt-3"}`}>
@@ -753,6 +720,7 @@ export function ChatPanel({
                           ) : null}
                         </p>
                       ) : null}
+                      {message.gif ? <GifMessage gif={message.gif} /> : null}
                       {message.attachments?.length ? (
                         <MessageAttachments
                           attachments={message.attachments}
@@ -777,6 +745,21 @@ export function ChatPanel({
           </ul>
         )}
       </div>
+
+      {!atBottom ? (
+        <div className="pointer-events-none relative z-10 h-0">
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="pointer-events-auto absolute -top-12 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink shadow-[0_8px_24px_rgba(11,20,32,0.16)] transition hover:border-accent/60 animate-fade-up"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 5v14M6 13l6 6 6-6" />
+            </svg>
+            {unseen ? `${unseen} new message${unseen === 1 ? "" : "s"}` : "Jump to latest"}
+          </button>
+        </div>
+      ) : null}
 
       {/* Typing + composer */}
       <div className="shrink-0 border-t border-line/80 px-3 pb-3 pt-1.5 sm:px-5">
@@ -856,6 +839,7 @@ export function ChatPanel({
             {emojiOpen ? (
               <EmojiPicker
                 onPick={pickEmoji}
+                onPickGif={reactTarget || editing ? undefined : (gif) => void sendGif(gif)}
                 onClose={() => {
                   setEmojiOpen(false);
                   setReactTarget(null);
@@ -873,8 +857,8 @@ export function ChatPanel({
                 event.target.value = "";
               }}
             />
-            <div className="flex items-end gap-2">
-            <div className="flex shrink-0 items-center gap-0.5 rounded-2xl border border-line bg-surface p-1">
+            <div className="flex items-end gap-1 rounded-[24px] border border-line bg-surface p-1.5 transition focus-within:border-accent/70 focus-within:ring-4 focus-within:ring-accent/10">
+            <div className="flex shrink-0 items-center">
               <button
                 type="button"
                 data-emoji-toggle
@@ -882,7 +866,7 @@ export function ChatPanel({
                 aria-label="Emoji (Ctrl + /)"
                 title="Emoji (Ctrl + /)"
                 aria-expanded={emojiOpen}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
                   emojiOpen ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-paper hover:text-ink"
                 }`}
               >
@@ -896,7 +880,7 @@ export function ChatPanel({
                 onClick={() => fileInputRef.current?.click()}
                 aria-label="Attach files"
                 title={`Attach files${maxFileSize ? ` (up to ${formatBytes(maxFileSize)} each)` : ""}`}
-                className="flex h-9 w-9 items-center justify-center rounded-xl text-ink-muted transition hover:bg-paper hover:text-ink"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-ink-muted transition hover:bg-paper hover:text-ink"
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="m20.5 11.5-8.4 8.4a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.5 3.5 0 0 1 4.9 4.9l-8.4 8.4a1.7 1.7 0 0 1-2.5-2.5l7.7-7.7" />
@@ -929,19 +913,25 @@ export function ChatPanel({
               }}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
-              placeholder="Write a message… (@ to mention, Ctrl + / for emoji)"
+              placeholder={editing ? "Edit your message…" : "Message… (@ mention, : emoji, Ctrl + / picker)"}
               aria-label="Message"
-              className="max-h-36 min-h-11 flex-1 resize-none rounded-2xl border border-line bg-surface px-4 py-2.5 text-[15px] leading-6 text-ink outline-none transition [field-sizing:content] focus:border-accent"
+              className="max-h-36 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-6 text-ink outline-none [field-sizing:content] placeholder:text-ink-muted/70"
             />
             <button
               type="submit"
               disabled={editing ? sending : (!draft.trim() && !readyIds.length) || sending || uploading}
               aria-label={editing ? "Save edit" : "Send message"}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition hover:brightness-105 disabled:opacity-40 disabled:shadow-none"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-white transition hover:brightness-105 active:scale-95 disabled:bg-ink/15 disabled:text-ink-muted"
             >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
+              {editing ? (
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="m5 12 5 5L20 7" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] translate-x-px" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
+                </svg>
+              )}
             </button>
             </div>
           </form>

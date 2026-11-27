@@ -23,8 +23,17 @@ import {
   noteLabel,
   validatePassword,
 } from "./note-store";
-import { addSubscription, cleanSubscription, clearSubscriptions, pushPublicKey, removeSubscription, sendPush } from "./push";
+import {
+  addSubscription,
+  cleanSubscription,
+  clearSubscriptions,
+  countSubscriptions,
+  pushPublicKey,
+  removeSubscription,
+  sendPush,
+} from "./push";
 import type { PushPayload } from "../src/lib/push-types";
+import { cleanGif } from "../src/lib/gifs";
 import { FileError, deleteFile, fileEvents, listFiles, renameFile } from "./file-store";
 import { isValidFileId, type FileEvent } from "../src/lib/files";
 import {
@@ -457,6 +466,7 @@ export function attachSocketServer(httpServer: HttpServer) {
           mentions?: unknown;
           replyTo?: unknown;
           secret?: unknown;
+          gif?: unknown;
         },
         ack: unknown,
       ) => {
@@ -491,6 +501,7 @@ export function attachSocketServer(httpServer: HttpServer) {
             input.mentions,
             input.replyTo,
             input.secret,
+            input.gif === undefined ? null : cleanGif(input.gif),
           );
           io.to(roomName(input.noteId)).emit("note:chat-message", {
             noteId: input.noteId,
@@ -513,7 +524,9 @@ export function attachSocketServer(httpServer: HttpServer) {
             input.noteId,
             author.id,
             "chat",
-            fileCount
+            message.gif && !message.text
+              ? `${author.name} sent a GIF`
+              : fileCount
               ? `${author.name} sent ${fileCount === 1 ? "a file" : `${fileCount} files`}`
               : `${author.name} sent a message`,
             { skip: mentioned },
@@ -627,6 +640,37 @@ export function attachSocketServer(httpServer: HttpServer) {
         }
       },
     );
+
+    // "Send test notification": a real push to this person's devices in a few seconds,
+    // so they can switch away and check that notifications actually arrive.
+    const lastTest = { at: 0 };
+    socket.on("push:test", async (input: { noteId?: unknown; userId?: unknown }, ack: unknown) => {
+      const reply = safeAck<object>(ack);
+      if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
+      const userId = input.userId;
+      if (typeof userId !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(userId)) return reply({ ok: false, error: "Invalid user" });
+      if (Date.now() - lastTest.at < 15_000) return reply({ ok: false, error: "Wait a few seconds before sending another test." });
+      lastTest.at = Date.now();
+      const noteId = input.noteId;
+      const devices = await countSubscriptions(noteId, userId);
+      reply({ ok: true, devices });
+      if (!devices) return;
+      setTimeout(() => {
+        const base = (process.env.PUBLIC_URL ?? "").replace(/\/+$/, "");
+        void sendPush(
+          noteId,
+          new Set(),
+          {
+            title: "ShareAnything test",
+            body: "Notifications work on this device 🎉",
+            tag: `test:${noteId}`,
+            url: `${base}/${noteId}#chat`,
+            topic: `test-${noteId}`.slice(0, 32),
+          },
+          new Set([userId]),
+        );
+      }, 3000);
+    });
 
     socket.on("note:push-unsubscribe", async (input: { noteId?: unknown; endpoint?: unknown }, ack: unknown) => {
       const reply = safeAck<object>(ack);

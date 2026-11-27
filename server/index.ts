@@ -3,6 +3,7 @@ import { createServer } from "http";
 import path from "path";
 import next from "next";
 import { handleEmojiRequest } from "./emoji-http";
+import { handleGifRequest } from "./gif-http";
 import { handleFileRequest } from "./file-http";
 import { handleNewNoteRequest } from "./new-note-http";
 import { flushAllNotes } from "./note-store";
@@ -48,6 +49,8 @@ app
       }
       // Fluent emoji images (self-hosted).
       if (handleEmojiRequest(req, res)) return;
+      // GIF search (GIPHY, key kept on the server).
+      if (handleGifRequest(req, res)) return;
       // Media manager uploads/downloads (streamed; they never touch Next.js).
       if (handleFileRequest(req, res)) return;
       // "/" and "New note": unique ids are handed out here, never in the browser.

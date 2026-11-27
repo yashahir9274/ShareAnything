@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ALL_EMOJIS, EMOJI_CATEGORIES } from "./emoji-data";
 import { FluentEmoji } from "./fluent-emoji";
+import { GifPicker } from "./gif-picker";
+import type { GifResult } from "@/lib/gifs";
 
 const RECENT_KEY = "shareanything:recent-emojis";
 const RECENT_MAX = 16;
@@ -29,7 +31,17 @@ function rememberRecent(emoji: string) {
  * Emoji popover: search, categories, recently used. Enter picks the first match,
  * Escape closes. Closing returns focus to the message box (handled by the caller).
  */
-export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => void; onClose: () => void }) {
+export function EmojiPicker({
+  onPick,
+  onClose,
+  onPickGif,
+}: {
+  onPick: (emoji: string) => void;
+  onClose: () => void;
+  /** When given, a "GIFs" tab appears; picking one sends it. */
+  onPickGif?: (gif: GifResult) => void;
+}) {
+  const [tab, setTab] = useState<"emoji" | "gifs">("emoji");
   const [query, setQuery] = useState("");
   const [recent] = useState(readRecent);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -80,7 +92,9 @@ export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => vo
       ref={panelRef}
       role="dialog"
       aria-label="Emoji picker"
-      className="absolute bottom-full left-0 z-30 mb-2 flex h-[22rem] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl animate-fade-up"
+      className={`absolute bottom-full left-0 z-30 mb-2 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl animate-fade-up ${
+        tab === "gifs" ? "h-[26rem] w-[min(24rem,calc(100vw-2rem))]" : "h-[22rem] w-[min(22rem,calc(100vw-2rem))]"
+      }`}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
@@ -88,6 +102,32 @@ export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => vo
         }
       }}
     >
+      {onPickGif ? (
+        <div role="tablist" aria-label="Emoji or GIFs" className="flex shrink-0 gap-1 border-b border-line/80 px-2 pt-2">
+          {(["emoji", "gifs"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => {
+                setTab(value);
+                if (value === "emoji") window.setTimeout(() => searchRef.current?.focus(), 0);
+              }}
+              className={`-mb-px rounded-t-lg border-b-2 px-3 pb-1.5 pt-1 text-sm font-semibold transition ${
+                tab === value ? "border-accent text-ink" : "border-transparent text-ink-muted hover:text-ink"
+              }`}
+            >
+              {value === "emoji" ? "Emoji" : "GIFs"}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {tab === "gifs" && onPickGif ? (
+        <GifPicker onPick={onPickGif} />
+      ) : (
+      <>
       <div className="shrink-0 border-b border-line/80 p-2">
         <input
           ref={searchRef}
@@ -158,6 +198,8 @@ export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => vo
             </button>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

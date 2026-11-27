@@ -170,3 +170,8 @@ export async function sendPush(noteId: string, skipUserIds: Set<string>, payload
     });
   }
 }
+
+/** How many push subscriptions a person has for a note (for the "test notification" check). */
+export async function countSubscriptions(noteId: string, userId: string) {
+  return (await load(noteId)).filter((entry) => entry.userId === userId).length;
+}

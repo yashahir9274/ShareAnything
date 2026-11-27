@@ -163,6 +163,8 @@ export function Notepad({ noteId }: NotepadProps) {
         title: `New message · ${noteLabelRef.current}`,
         body: mentionedMe
           ? `${message.author.name} mentioned you`
+          : message.mentionsAll
+            ? `${message.author.name} mentioned everyone`
           : repliedToMe
             ? `${message.author.name} replied to you`
             : message.gif && !message.text

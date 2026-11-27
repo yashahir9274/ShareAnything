@@ -520,6 +520,11 @@ export function attachSocketServer(httpServer: HttpServer) {
             void notifyNote(input.noteId, author.id, "chat", `${author.name} replied to you`, { only: new Set([repliedTo]) });
             mentioned.add(repliedTo);
           }
+          // @everyone: everybody else in the note hears "mentioned everyone".
+          if (message.mentionsAll) {
+            void notifyNote(input.noteId, author.id, "chat", `${author.name} mentioned everyone`, { skip: mentioned });
+            return;
+          }
           void notifyNote(
             input.noteId,
             author.id,

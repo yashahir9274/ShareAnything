@@ -72,6 +72,8 @@ export type ChatMessage = {
   ownable?: boolean;
   /** A GIF sent with the message. */
   gif?: ChatGif;
+  /** The text has @everyone (or @all): everyone in the note is notified. */
+  mentionsAll?: boolean;
 };
 
 export type ChatReaction = { emoji: string; users: ChatUser[] };
@@ -146,11 +148,20 @@ export function cleanMentions(input: unknown, text: string, authorId: string): C
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
   const mentions: ChatUser[] = [];
+  const lower = text.toLowerCase();
   for (const item of input.slice(0, CHAT_LIMITS.mentionsMax)) {
     const user = cleanUser(item);
-    if (!user || user.id === authorId || seen.has(user.id) || !text.includes(`@${user.name}`)) continue;
+    // Case doesn't matter: "@yash" mentions Yash.
+    if (!user || user.id === authorId || seen.has(user.id) || !lower.includes(`@${user.name.toLowerCase()}`)) continue;
     seen.add(user.id);
     mentions.push(user);
   }
   return mentions;
+}
+
+/** "@everyone" / "@all" as a word: notifies everyone in the note. */
+export const MENTION_ALL_PATTERN = /(^|[\s(])@(everyone|all)(?=$|[\s.,!?;:)])/i;
+
+export function mentionsEveryone(text: string) {
+  return MENTION_ALL_PATTERN.test(text);
 }

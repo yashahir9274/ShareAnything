@@ -20,9 +20,10 @@ import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
 import { MessageAttachments, PendingAttachments, type PendingAttachment } from "./chat-attachments";
 import { EmojiPicker } from "./emoji-picker";
 import { NotificationMenu } from "./notification-menu";
+import { SafeViewToggle } from "./blurred-media";
 import { GifMessage } from "./gif-picker";
 import type { ChatGif } from "@/lib/gifs";
-import { MentionPicker, MessageText, findMentionQuery, matchMentions } from "./mentions";
+import { EVERYONE_ID, MentionPicker, MessageText, findMentionQuery, matchMentions, type MentionOption } from "./mentions";
 import { isJumboEmoji } from "./fluent-emoji";
 import { ShortcodePicker, emojiForCode, findShortcodeQuery, matchShortcodes } from "./emoji-shortcodes";
 import { hideMessageForMe, useHiddenMessages } from "@/lib/hidden-messages";
@@ -154,8 +155,28 @@ export function ChatPanel({
     void row.offsetWidth; // restart the animation
     row.classList.add("chat-flash");
   }
-  const others = online.filter((user) => user.id !== identity?.id);
-  const suggestions = mention ? matchMentions(others, mention.query) : [];
+  /** Everyone you can mention: people online first, then others who've chatted here. */
+  const people = useMemo(() => {
+    const list = new Map<string, MentionOption>();
+    for (const user of online) if (user.id !== identity?.id) list.set(user.id, { user, online: true });
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const author = messages[i].author;
+      if (author.id !== identity?.id && !list.has(author.id)) list.set(author.id, { user: author, online: false });
+    }
+    return [...list.values()];
+  }, [online, messages, identity?.id]);
+  const suggestions: MentionOption[] = useMemo(() => {
+    if (!mention) return [];
+    const q = mention.query.toLowerCase();
+    const matched = matchMentions(
+      people.map((option) => ({ ...option.user, online: option.online })),
+      mention.query,
+    ).map(({ online: isOnline, ...user }) => ({ user, online: isOnline }));
+    const everyone: MentionOption = { user: { id: EVERYONE_ID, name: "everyone", color: "" }, online: true };
+    const wantsEveryone = !/\s/.test(q) && ("everyone".startsWith(q) || (q.length > 0 && "all".startsWith(q)));
+    if (!wantsEveryone) return matched;
+    return q ? [everyone, ...matched] : [...matched, everyone];
+  }, [mention, people]);
 
   // ":lol" emoji suggestions.
   const [shortcode, setShortcode] = useState<{ start: number; query: string } | null>(null);
@@ -270,7 +291,7 @@ export function ChatPanel({
     const caret = input?.selectionStart ?? draft.length;
     const inserted = `@${user.name} `;
     const next = `${draft.slice(0, mention.start)}${inserted}${draft.slice(caret)}`.slice(0, CHAT_LIMITS.textMax);
-    picked.current.set(user.id, user);
+    if (user.id !== EVERYONE_ID) picked.current.set(user.id, user);
     setDraft(next);
     setMention(null);
     input?.focus();
@@ -281,8 +302,10 @@ export function ChatPanel({
   /** Everyone whose "@Name" is still in the text (picked from the list, or typed out in full). */
   function mentionsIn(text: string) {
     const candidates = new Map(picked.current);
-    for (const user of others) candidates.set(user.id, user);
-    return [...candidates.values()].filter((user) => text.includes(`@${user.name}`));
+    for (const option of people) candidates.set(option.user.id, option.user);
+    const lower = text.toLowerCase();
+    // "@yash" and "@Yash" both count; no need to pick from the list.
+    return [...candidates.values()].filter((user) => lower.includes(`@${user.name.toLowerCase()}`));
   }
 
   const available = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
@@ -521,7 +544,7 @@ export function ChatPanel({
         }
         if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey && !event.nativeEvent.isComposing) {
           event.preventDefault();
-          pickMention(suggestions[Math.min(mentionIndex, suggestions.length - 1)]);
+          pickMention(suggestions[Math.min(mentionIndex, suggestions.length - 1)].user);
           return;
         }
       }
@@ -593,6 +616,7 @@ export function ChatPanel({
               </svg>
             </button>
           ) : null}
+          <SafeViewToggle />
           <NotificationMenu noteId={noteId} userId={identity?.id} />
         </div>
       </div>
@@ -624,7 +648,8 @@ export function ChatPanel({
           <ul className="space-y-1">
             {rows.map(({ message, newDay, grouped }) => {
               const mine = message.author.id === me;
-              const mentionsMe = !mine && Boolean(message.mentions?.some((user) => user.id === me));
+              const mentionsMe =
+                !mine && (Boolean(message.mentionsAll) || Boolean(message.mentions?.some((user) => user.id === me)));
               const jumbo = !message.replyTo && isJumboEmoji(message.text);
               return (
                 <li key={message.id} id={`msg-${message.id}`} className="rounded-2xl">
@@ -706,6 +731,7 @@ export function ChatPanel({
                           <MessageText
                             text={message.text}
                             mentions={message.mentions}
+                            mentionsAll={message.mentionsAll}
                             meId={me}
                             mine={mine}
                             emojiSize={jumbo ? "h-12 w-12" : undefined}
@@ -826,12 +852,11 @@ export function ChatPanel({
               items={pending}
               onRemove={(key) => setPending((current) => current.filter((item) => item.key !== key))}
             />
-            {mention && !emojiOpen ? (
+            {mention && suggestions.length && !emojiOpen ? (
               <MentionPicker
-                users={suggestions}
+                options={suggestions}
                 query={mention.query}
                 activeIndex={Math.min(mentionIndex, Math.max(0, suggestions.length - 1))}
-                anyoneOnline={others.length > 0}
                 onPick={pickMention}
                 onHover={setMentionIndex}
               />
@@ -857,7 +882,7 @@ export function ChatPanel({
                 event.target.value = "";
               }}
             />
-            <div className="flex items-end gap-1 rounded-[24px] border border-line bg-surface p-1.5 transition focus-within:border-accent/70 focus-within:ring-4 focus-within:ring-accent/10">
+            <div className="flex items-end gap-1 rounded-[24px] border border-line bg-surface p-1.5 transition focus-within:border-ink/25">
             <div className="flex shrink-0 items-center">
               <button
                 type="button"

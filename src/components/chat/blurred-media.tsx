@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties, type ReactNode } from "react";
+import { setSafeView, useSafeView } from "@/lib/safe-view";
 
 function EyeIcon({ off = false }: { off?: boolean }) {
   return (
@@ -13,9 +14,9 @@ function EyeIcon({ off = false }: { off?: boolean }) {
 }
 
 /**
- * Photos, videos and GIFs in chat start blurred, so nobody gets surprised by what
- * someone else sent. Click to show; click again to blur it back. Hover shows a
- * Show/Hide button (and "Open" for the full preview once it's visible).
+ * Photos, videos and GIFs in chat start blurred while Safe view is on (the default), so
+ * nobody gets surprised by what someone else sent. Click to show; click again to blur it
+ * back. Hover shows a Show/Hide button (and "Open" for the full preview once it's visible).
  */
 export function BlurredMedia({
   label,
@@ -32,8 +33,11 @@ export function BlurredMedia({
   className?: string;
   style?: CSSProperties;
 }) {
-  const [revealed, setRevealed] = useState(false);
-  const toggle = () => setRevealed((value) => !value);
+  const safe = useSafeView();
+  // A click overrides Safe view for this one picture, until Safe view is switched again.
+  const [override, setOverride] = useState<{ version: number; revealed: boolean } | null>(null);
+  const revealed = override && override.version === safe.version ? override.revealed : !safe.on;
+  const toggle = () => setOverride({ version: safe.version, revealed: !revealed });
 
   return (
     <div className={`group/blur relative overflow-hidden ${className}`} style={style}>
@@ -85,5 +89,31 @@ export function BlurredMedia({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** The "Safe view" switch at the top of Chat: blur all GIFs, photos and videos, or show them. */
+export function SafeViewToggle() {
+  const { on } = useSafeView();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => setSafeView(!on)}
+      title={on ? "Safe view on: GIFs, photos and videos are blurred until you click them" : "Safe view off: GIFs, photos and videos show right away"}
+      className={`inline-flex h-9 items-center gap-2 rounded-full px-3 text-xs font-medium transition ${
+        on ? "bg-accent-soft text-ink" : "bg-surface text-ink-muted hover:text-ink"
+      }`}
+    >
+      <EyeIcon off={on} />
+      <span className="hidden sm:inline">Safe view</span>
+      <span
+        aria-hidden
+        className={`relative h-4 w-7 rounded-full transition ${on ? "bg-accent" : "bg-ink/20"}`}
+      >
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-[14px]" : "left-0.5"}`} />
+      </span>
+    </button>
   );
 }

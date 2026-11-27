@@ -4,6 +4,7 @@ import path from "path";
 import {
   CHAT_LIMITS,
   cleanMentions,
+  mentionsEveryone,
   isReactionEmoji,
   type ChatAttachment,
   type ChatMessage,
@@ -98,6 +99,7 @@ export async function addMessage(
     };
     const mentions = cleanMentions(mentionsInput, cleaned, author.id);
     if (mentions.length) message.mentions = mentions;
+    if (mentionsEveryone(cleaned)) message.mentionsAll = true;
     // A reply quotes the start of the original, so it still reads well if that scrolls away.
     const original = typeof replyToId === "string" ? messages.find((m) => m.id === replyToId) : undefined;
     if (original) message.replyTo = replyRef(original);
@@ -224,6 +226,8 @@ export async function editMessage(
     const mentions = cleanMentions(mentionsInput, cleaned, message.author.id);
     if (mentions.length) updated.mentions = mentions;
     else delete updated.mentions;
+    if (mentionsEveryone(cleaned)) updated.mentionsAll = true;
+    else delete updated.mentionsAll;
     messages[index] = updated;
     const replies = refreshReplies(messages, updated);
     histories.set(noteId, Promise.resolve(messages));

@@ -36,7 +36,7 @@ import {
   type PresenceList,
   type TypingEvent,
 } from "../src/lib/chat";
-import { ChatError, addMessage, recentMessages } from "./chat-store";
+import { ChatError, addMessage, recentMessages, toggleReaction } from "./chat-store";
 
 type SocketData = {
   access: Set<string>;
@@ -147,10 +147,17 @@ export function attachSocketServer(httpServer: HttpServer) {
     return ids;
   }
 
-  async function notifyNote(noteId: string, actorId: string | undefined, kind: "chat" | "files", body: string) {
+  async function notifyNote(
+    noteId: string,
+    actorId: string | undefined,
+    kind: "chat" | "files",
+    body: string,
+    audience: { only?: Set<string>; skip?: Set<string> } = {},
+  ) {
     try {
       const skip = await lookingUserIds(noteId);
       if (actorId) skip.add(actorId);
+      for (const id of audience.skip ?? []) skip.add(id);
       const label = await noteLabel(noteId);
       const base = (process.env.PUBLIC_URL ?? "").replace(/\/+$/, "");
       const payload: PushPayload = {
@@ -160,10 +167,21 @@ export function attachSocketServer(httpServer: HttpServer) {
         url: `${base}/${noteId}#${kind}`,
         topic: `${kind}-${noteId}`.slice(0, 32),
       };
-      await sendPush(noteId, skip, payload);
+      await sendPush(noteId, skip, payload, audience.only);
     } catch (error) {
       console.warn("push notify failed", (error as Error).message);
     }
+  }
+
+  // Reactions: 30 per 10 seconds per connection.
+  const reactLog = new Map<string, number[]>();
+  function allowReact(socketId: string) {
+    const now = Date.now();
+    const recent = (reactLog.get(socketId) ?? []).filter((at) => now - at < 10_000);
+    if (recent.length >= 30) return false;
+    recent.push(now);
+    reactLog.set(socketId, recent);
+    return true;
   }
 
   // Chat send limit: 12 messages per 10 seconds per connection.
@@ -430,7 +448,17 @@ export function attachSocketServer(httpServer: HttpServer) {
 
     socket.on(
       "note:chat-send",
-      async (input: { noteId?: unknown; user?: unknown; text?: unknown; attachments?: unknown }, ack: unknown) => {
+      async (
+        input: {
+          noteId?: unknown;
+          user?: unknown;
+          text?: unknown;
+          attachments?: unknown;
+          mentions?: unknown;
+          replyTo?: unknown;
+        },
+        ack: unknown,
+      ) => {
         const reply = safeAck<object>(ack);
         if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
         const author = cleanUser(input.user);
@@ -454,14 +482,31 @@ export function attachSocketServer(httpServer: HttpServer) {
         }
 
         try {
-          const message = await addMessage(input.noteId, author, input.text ?? "", attachments);
+          const message = await addMessage(
+            input.noteId,
+            author,
+            input.text ?? "",
+            attachments,
+            input.mentions,
+            input.replyTo,
+          );
           io.to(roomName(input.noteId)).emit("note:chat-message", {
             noteId: input.noteId,
             message,
           } satisfies { noteId: string; message: ChatMessage });
           reply({ ok: true, message });
-          // Never the text — only who sent something.
+          // Never the text — only who sent something. People who were @mentioned are told so.
           const fileCount = attachments.length;
+          const mentioned = new Set((message.mentions ?? []).map((user) => user.id));
+          if (mentioned.size) {
+            void notifyNote(input.noteId, author.id, "chat", `${author.name} mentioned you`, { only: mentioned });
+          }
+          // Whoever was replied to hears "replied to you" (unless they were @mentioned already).
+          const repliedTo = message.replyTo?.author.id;
+          if (repliedTo && repliedTo !== author.id && !mentioned.has(repliedTo)) {
+            void notifyNote(input.noteId, author.id, "chat", `${author.name} replied to you`, { only: new Set([repliedTo]) });
+            mentioned.add(repliedTo);
+          }
           void notifyNote(
             input.noteId,
             author.id,
@@ -469,11 +514,32 @@ export function attachSocketServer(httpServer: HttpServer) {
             fileCount
               ? `${author.name} sent ${fileCount === 1 ? "a file" : `${fileCount} files`}`
               : `${author.name} sent a message`,
+            { skip: mentioned },
           );
         } catch (error) {
           if (error instanceof ChatError) return reply({ ok: false, error: error.message });
           console.error("note:chat-send failed", error);
           reply({ ok: false, error: "Couldn’t send message" });
+        }
+      },
+    );
+
+    socket.on(
+      "note:chat-react",
+      async (input: { noteId?: unknown; messageId?: unknown; emoji?: unknown; user?: unknown }, ack: unknown) => {
+        const reply = safeAck<object>(ack);
+        if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
+        const user = cleanUser(input.user);
+        if (!user) return reply({ ok: false, error: "Set your name first" });
+        if (!allowReact(socket.id)) return reply({ ok: false, error: "Slow down a little" });
+        try {
+          const message = await toggleReaction(input.noteId, input.messageId, input.emoji, user);
+          io.to(roomName(input.noteId)).emit("note:chat-update", { noteId: input.noteId, message });
+          reply({ ok: true, message });
+        } catch (error) {
+          if (error instanceof ChatError) return reply({ ok: false, error: error.message });
+          console.error("note:chat-react failed", error);
+          reply({ ok: false, error: "Couldn’t react" });
         }
       },
     );
@@ -544,6 +610,7 @@ export function attachSocketServer(httpServer: HttpServer) {
 
     socket.on("disconnect", () => {
       sendLog.delete(socket.id);
+      reactLog.delete(socket.id);
       for (const timer of socket.data.timers.values()) clearTimeout(timer);
       socket.data.timers.clear();
       for (const [noteId, entries] of presence) {

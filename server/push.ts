@@ -136,11 +136,14 @@ export function clearSubscriptions(noteId: string, keepUserId?: string) {
 
 /**
  * Sends a notification to everyone subscribed to the note except `skipUserIds`
- * (the sender, and people who are looking at the note right now).
+ * (the sender, and people who are looking at the note right now). With `onlyUserIds`,
+ * only those people (e.g. the ones @mentioned).
  */
-export async function sendPush(noteId: string, skipUserIds: Set<string>, payload: PushPayload) {
+export async function sendPush(noteId: string, skipUserIds: Set<string>, payload: PushPayload, onlyUserIds?: Set<string>) {
   const list = await load(noteId);
-  const targets = list.filter((entry) => !skipUserIds.has(entry.userId));
+  const targets = list.filter(
+    (entry) => !skipUserIds.has(entry.userId) && (!onlyUserIds || onlyUserIds.has(entry.userId)),
+  );
   if (!targets.length) return;
   await pushPublicKey();
   const body = JSON.stringify(payload);

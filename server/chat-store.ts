@@ -1,7 +1,15 @@
 import { randomBytes } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
-import { CHAT_LIMITS, type ChatAttachment, type ChatMessage, type ChatUser } from "../src/lib/chat";
+import {
+  CHAT_LIMITS,
+  cleanMentions,
+  isReactionEmoji,
+  type ChatAttachment,
+  type ChatMessage,
+  type ChatReplyRef,
+  type ChatUser,
+} from "../src/lib/chat";
 import { isValidNoteId } from "../src/lib/note-types";
 
 /** Per-note chat history, stored next to the note as .data/notes/<id>.chat.json. */
@@ -64,6 +72,8 @@ export async function addMessage(
   author: ChatUser,
   text: unknown,
   attachments: ChatAttachment[] = [],
+  mentionsInput?: unknown,
+  replyToId?: unknown,
 ): Promise<ChatMessage> {
   if (typeof text !== "string") throw new ChatError("Invalid message");
   // Keep line breaks, drop other control characters.
@@ -82,9 +92,58 @@ export async function addMessage(
       createdAt: new Date().toISOString(),
       ...(attachments.length ? { attachments } : {}),
     };
+    const mentions = cleanMentions(mentionsInput, cleaned, author.id);
+    if (mentions.length) message.mentions = mentions;
+    // A reply quotes the start of the original, so it still reads well if that scrolls away.
+    const original = typeof replyToId === "string" ? messages.find((m) => m.id === replyToId) : undefined;
+    if (original) message.replyTo = replyRef(original);
     const next = [...messages, message].slice(-CHAT_LIMITS.historyMax);
     histories.set(noteId, Promise.resolve(next));
     await save(noteId, next);
     return message;
+  });
+}
+
+function replyRef(original: ChatMessage): ChatReplyRef {
+  const text = original.text.replace(/\s+/g, " ").trim();
+  return {
+    id: original.id,
+    author: original.author,
+    text: text.length > CHAT_LIMITS.replySnippetMax ? `${text.slice(0, CHAT_LIMITS.replySnippetMax - 1)}…` : text,
+    ...(original.attachments?.length ? { files: original.attachments.length } : {}),
+  };
+}
+
+/**
+ * Adds your reaction, or removes it if you'd already reacted with that emoji.
+ * Returns the updated message.
+ */
+export async function toggleReaction(noteId: string, messageId: unknown, emoji: unknown, user: ChatUser) {
+  if (typeof messageId !== "string" || !/^[a-f0-9]{24}$/.test(messageId)) throw new ChatError("Invalid message");
+  if (!isReactionEmoji(emoji)) throw new ChatError("Invalid reaction");
+  return withLock(noteId, async () => {
+    const messages = await load(noteId);
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index < 0) throw new ChatError("That message is no longer available");
+    const message = messages[index];
+    const reactions = (message.reactions ?? []).map((r) => ({ ...r, users: [...r.users] }));
+    const existing = reactions.find((r) => r.emoji === emoji);
+    if (existing) {
+      const mine = existing.users.findIndex((u) => u.id === user.id);
+      if (mine >= 0) existing.users.splice(mine, 1);
+      else if (existing.users.length < CHAT_LIMITS.reactionUsersMax) existing.users.push(user);
+    } else {
+      if (reactions.length >= CHAT_LIMITS.reactionsMax) throw new ChatError("Too many different reactions");
+      reactions.push({ emoji, users: [user] });
+    }
+    const kept = reactions.filter((r) => r.users.length);
+    const updated: ChatMessage = { ...message };
+    if (kept.length) updated.reactions = kept;
+    else delete updated.reactions;
+    const next = [...messages];
+    next[index] = updated;
+    histories.set(noteId, Promise.resolve(next));
+    await save(noteId, next);
+    return updated;
   });
 }

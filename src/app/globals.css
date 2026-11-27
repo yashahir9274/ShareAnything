@@ -21,9 +21,10 @@
   --grain-overlay: rgba(255, 255, 255, 0.55);
   /* Page background: a few shades below the panels so they stand out without shadows. */
   --scene-base: #e4e9ee;
-  --scene-dot: rgba(11, 20, 32, 0.09);
-  --scene-glow-1: rgba(255, 92, 53, 0.07);
-  --scene-glow-2: rgba(15, 118, 110, 0.06);
+  --scene-glow-1: rgba(255, 92, 53, 0.16);
+  --scene-glow-2: rgba(15, 118, 110, 0.13);
+  --scene-glow-3: rgba(124, 58, 237, 0.11);
+  --scene-line: rgba(11, 20, 32, 0.1);
   color-scheme: light;
 }
 
@@ -44,9 +45,10 @@ html[data-theme="dark"] {
   --on-strong: #0b1420;
   --grain-overlay: rgba(20, 28, 38, 0.6);
   --scene-base: #090d13;
-  --scene-dot: rgba(255, 255, 255, 0.055);
-  --scene-glow-1: rgba(255, 107, 71, 0.05);
-  --scene-glow-2: rgba(45, 212, 191, 0.04);
+  --scene-glow-1: rgba(255, 107, 71, 0.14);
+  --scene-glow-2: rgba(45, 212, 191, 0.1);
+  --scene-glow-3: rgba(167, 139, 250, 0.13);
+  --scene-line: rgba(255, 255, 255, 0.075);
   color-scheme: dark;
 }
 
@@ -184,30 +186,152 @@ body {
   }
 }
 
+/* ---- Chat: message actions on hover, and the flash when jumping to a replied message ---- */
+
+.message-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.msg-row:hover .message-actions,
+.msg-row:focus-within .message-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-flash {
+  animation: chat-flash 1.6s ease-out;
+}
+
+@keyframes chat-flash {
+  0%,
+  35% {
+    background-color: var(--accent-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
 /* ---- Background ------------------------------------------------------
-   Quiet on purpose — an even tone, a faint dot grid (like a notebook workspace) that
-   fades out toward the edges, and two very soft colour glows. Static, so nothing
-   moves behind your writing and phones don't spend battery on it. */
+   Six calm designs take turns: each shows for 10s, then cross-fades (1.5s) into the
+   next, drifting very slowly while it's on screen. Low contrast on purpose, so the
+   note stays the focus. Pure CSS; one still design when motion is reduced. */
 
 .scene {
   position: fixed;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(900px 520px at 8% -8%, var(--scene-glow-1), transparent 70%),
-    radial-gradient(800px 480px at 95% 0%, var(--scene-glow-2), transparent 70%),
-    var(--scene-base);
+  background: var(--scene-base);
 }
 
-.scene::before {
+.scene-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: scene-cycle 60s linear infinite;
+}
+
+/* Patterns fade out toward the edges. */
+.scene-layer::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(var(--scene-dot) 1px, transparent 1.2px);
-  background-size: 22px 22px;
   -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
   mask-image: radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
+}
+
+/* Start on layer 1 already visible; then one every 10s. */
+.scene-layer-1 { animation-delay: -1.5s; }
+.scene-layer-2 { animation-delay: 8.5s; }
+.scene-layer-3 { animation-delay: 18.5s; }
+.scene-layer-4 { animation-delay: 28.5s; }
+.scene-layer-5 { animation-delay: 38.5s; }
+.scene-layer-6 { animation-delay: 48.5s; }
+
+/* 60s cycle: fade in 1.5s (2.5%), stay 10s, fade out 1.5s while drifting. */
+@keyframes scene-cycle {
+  0% { opacity: 0; transform: scale(1); }
+  2.5% { opacity: 1; }
+  16.67% { opacity: 1; }
+  19.17% { opacity: 0; transform: scale(1.07); }
+  100% { opacity: 0; transform: scale(1.07); }
+}
+
+/* 1 · Notebook dots with warm and cool corner light. */
+.scene-layer-1 {
+  background:
+    radial-gradient(900px 520px at 8% -8%, var(--scene-glow-1), transparent 70%),
+    radial-gradient(800px 480px at 95% 0%, var(--scene-glow-2), transparent 70%);
+}
+.scene-layer-1::before {
+  background-image: radial-gradient(var(--scene-line) 1.1px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+
+/* 2 · Blueprint grid with a soft glow from the top. */
+.scene-layer-2 {
+  background: radial-gradient(1000px 600px at 50% -15%, var(--scene-glow-2), transparent 70%);
+}
+.scene-layer-2::before {
+  background-image:
+    linear-gradient(var(--scene-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--scene-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: center top;
+}
+
+/* 3 · Aurora: three large, very soft colour clouds. */
+.scene-layer-3 {
+  background:
+    radial-gradient(700px 500px at 15% 25%, var(--scene-glow-1), transparent 70%),
+    radial-gradient(800px 560px at 85% 35%, var(--scene-glow-3), transparent 70%),
+    radial-gradient(900px 600px at 50% 105%, var(--scene-glow-2), transparent 70%);
+}
+
+/* 4 · Topographic rings rising from the bottom-left corner. */
+.scene-layer-4 {
+  background: radial-gradient(800px 500px at 100% 0%, var(--scene-glow-1), transparent 70%);
+}
+.scene-layer-4::before {
+  background-image: repeating-radial-gradient(circle at 0% 100%, transparent 0 26px, var(--scene-line) 26px 27px);
+}
+
+/* 5 · Fine diagonal pinstripes with light from the bottom-right. */
+.scene-layer-5 {
+  background: radial-gradient(900px 560px at 100% 100%, var(--scene-glow-3), transparent 70%);
+}
+.scene-layer-5::before {
+  background-image: repeating-linear-gradient(135deg, var(--scene-line) 0 1px, transparent 1px 18px);
+}
+
+/* 6 · Plus marks (like a design canvas) with a teal glow on the left. */
+.scene-layer-6 {
+  background: radial-gradient(800px 560px at 0% 50%, var(--scene-glow-2), transparent 70%);
+}
+.scene-layer-6::before {
+  /* A tiled "+" shape, coloured by the background and faded out toward the edges. */
+  background: var(--scene-line);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M14 9.5v9M9.5 14h9' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E"), radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M14 9.5v9M9.5 14h9' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E"), radial-gradient(ellipse 85% 75% at 50% 40%, #000 30%, transparent 100%);
+  -webkit-mask-size: 28px 28px, 100% 100%;
+  mask-size: 28px 28px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-layer {
+    animation: none;
+  }
+  .scene-layer-1 {
+    opacity: 1;
+  }
 }
 
 .paper-grain {

@@ -19,6 +19,8 @@ import { CHAT_LIMITS, type ChatMessage, type ChatUser } from "@/lib/chat";
 import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
 import { MessageAttachments, PendingAttachments, type PendingAttachment } from "./chat-attachments";
 import { EmojiPicker } from "./emoji-picker";
+import { MentionPicker, MessageText, findMentionQuery, matchMentions } from "./mentions";
+import { MessageActions, ReactionChips, ReplyQuote, ReplyingTo, useCanHover } from "./message-extras";
 import { setIdentityName, type Identity } from "@/lib/identity";
 import { disableNotifications, enableNotifications, useNotifyState } from "@/lib/notifications";
 import { Avatar, AvatarStack } from "./avatars";
@@ -29,7 +31,9 @@ type ChatPanelProps = {
   online: ChatUser[];
   typing: ChatUser[];
   identity: Identity | null;
-  onSend: (text: string, attachmentIds?: string[]) => Promise<string | null>;
+  onSend: (text: string, attachmentIds?: string[], mentions?: ChatUser[], replyTo?: string) => Promise<string | null>;
+  /** Toggle your emoji reaction on a message. Resolves to an error message or null. */
+  onReact: (messageId: string, emoji: string) => Promise<string | null>;
   onTyping: () => void;
   /** First click inside the chat (used to ask for notifications when Chat was opened by link). */
   onFirstInteraction?: () => void;
@@ -57,23 +61,6 @@ function dayLabel(iso: string) {
 }
 
 /** Turns plain-text URLs into links (rendered as text nodes, so no HTML injection). */
-function Linkified({ text }: { text: string }) {
-  const parts = text.split(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g);
-  return (
-    <>
-      {parts.map((part, index) =>
-        index % 2 === 1 ? (
-          <a key={index} href={part} target="_blank" rel="noopener noreferrer nofollow" className="underline underline-offset-2">
-            {part}
-          </a>
-        ) : (
-          <span key={index}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 export function NotificationToggle({ compact = false }: { compact?: boolean }) {
   const state = useNotifyState();
   const { notify } = useDialogs();
@@ -151,6 +138,7 @@ export function ChatPanel({
   typing,
   identity,
   onSend,
+  onReact,
   onTyping,
   onFirstInteraction,
   files,
@@ -172,6 +160,76 @@ export function ChatPanel({
   const [dragging, setDragging] = useState(false);
   const [previewFile, setPreviewFile] = useState<NoteFile | null>(null);
   const dragDepth = useRef(0);
+  // @mentions: the "@query" being typed, which suggestion is highlighted, and who was picked.
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const picked = useRef(new Map<string, ChatUser>());
+  // Replies and reactions.
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  /** Message the emoji picker will react to (instead of typing into the box). */
+  const [reactTarget, setReactTarget] = useState<string | null>(null);
+  /** On touch screens, the message whose action bar was tapped open. */
+  const [activeMessage, setActiveMessage] = useState<string | null>(null);
+  const canHover = useCanHover();
+
+  async function react(messageId: string, emoji: string) {
+    setActiveMessage(null);
+    const problem = await onReact(messageId, emoji);
+    if (problem) setError(problem);
+  }
+
+  function startReply(message: ChatMessage) {
+    setReplyTo(message);
+    setActiveMessage(null);
+    inputRef.current?.focus();
+  }
+
+  /** Scrolls to the original of a reply and flashes it. */
+  function jumpTo(messageId: string) {
+    const row = document.getElementById(`msg-${messageId}`);
+    if (!row) {
+      dialogs.notify("That message is too old to show here.");
+      return;
+    }
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.remove("chat-flash");
+    void row.offsetWidth; // restart the animation
+    row.classList.add("chat-flash");
+  }
+  const others = online.filter((user) => user.id !== identity?.id);
+  const suggestions = mention ? matchMentions(others, mention.query) : [];
+
+  function updateMention(value: string, caret: number | null) {
+    const next = caret === null ? null : findMentionQuery(value, caret);
+    if (!next) {
+      if (mention) setMention(null);
+      return;
+    }
+    if (mention?.start === next.start && mention.query === next.query) return;
+    setMentionIndex(0);
+    setMention(next);
+  }
+
+  function pickMention(user: ChatUser) {
+    if (!mention) return;
+    const input = inputRef.current;
+    const caret = input?.selectionStart ?? draft.length;
+    const inserted = `@${user.name} `;
+    const next = `${draft.slice(0, mention.start)}${inserted}${draft.slice(caret)}`.slice(0, CHAT_LIMITS.textMax);
+    picked.current.set(user.id, user);
+    setDraft(next);
+    setMention(null);
+    input?.focus();
+    const at = mention.start + inserted.length;
+    window.setTimeout(() => input?.setSelectionRange(at, at), 0);
+  }
+
+  /** Everyone whose "@Name" is still in the text (picked from the list, or typed out in full). */
+  function mentionsIn(text: string) {
+    const candidates = new Map(picked.current);
+    for (const user of others) candidates.set(user.id, user);
+    return [...candidates.values()].filter((user) => text.includes(`@${user.name}`));
+  }
 
   const available = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
   const readyIds = pending.filter((item) => item.status === "ready" && item.file).map((item) => item.file!.id);
@@ -209,6 +267,17 @@ export function ChatPanel({
     },
     [onAttach, pending.length],
   );
+
+  function pickEmoji(emoji: string) {
+    if (reactTarget) {
+      const target = reactTarget;
+      setReactTarget(null);
+      setEmojiOpen(false);
+      void react(target, emoji);
+      return;
+    }
+    insertEmoji(emoji);
+  }
 
   function insertEmoji(emoji: string) {
     const input = inputRef.current;
@@ -286,7 +355,7 @@ export function ChatPanel({
     setSending(true);
     setError("");
     stickToBottom.current = true;
-    const problem = await onSend(text, readyIds);
+    const problem = await onSend(text, readyIds, mentionsIn(text), replyTo?.id);
     setSending(false);
     if (problem) {
       setError(problem);
@@ -294,10 +363,41 @@ export function ChatPanel({
     }
     setDraft("");
     setPending([]);
+    setMention(null);
+    picked.current.clear();
+    setReplyTo(null);
     inputRef.current?.focus();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // The @mention list takes the arrow keys, Enter/Tab and Escape while it's open.
+    if (mention) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMention(null);
+        return;
+      }
+      if (suggestions.length) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setMentionIndex((index) => (index + step + suggestions.length) % suggestions.length);
+          return;
+        }
+        if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          pickMention(suggestions[Math.min(mentionIndex, suggestions.length - 1)]);
+          return;
+        }
+      }
+    }
+    if (event.key === "Escape" && replyTo) {
+      event.preventDefault();
+      event.stopPropagation();
+      setReplyTo(null);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void submit();
@@ -398,8 +498,9 @@ export function ChatPanel({
           <ul className="space-y-1">
             {rows.map(({ message, newDay, grouped }) => {
               const mine = message.author.id === me;
+              const mentionsMe = !mine && Boolean(message.mentions?.some((user) => user.id === me));
               return (
-                <li key={message.id}>
+                <li key={message.id} id={`msg-${message.id}`} className="rounded-2xl">
                   {newDay ? (
                     <div className="my-3 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
                       <span className="h-px flex-1 bg-line" />
@@ -409,7 +510,31 @@ export function ChatPanel({
                   ) : null}
                   <div className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : ""} ${grouped ? "" : "mt-3"}`}>
                     <span className="w-8 shrink-0">{!grouped && !mine ? <Avatar user={message.author} /> : null}</span>
-                    <div className={`flex max-w-[78%] flex-col ${mine ? "items-end" : "items-start"}`}>
+                    <div
+                      className={`msg-row relative flex max-w-[78%] flex-col ${mine ? "items-end" : "items-start"}`}
+                      onClick={() => {
+                        // Phones: tap a message to show its reactions and Reply.
+                        if (!canHover) setActiveMessage((current) => (current === message.id ? null : message.id));
+                      }}
+                    >
+                      <MessageActions
+                        mine={mine}
+                        visible={activeMessage === message.id}
+                        hoverOnly={canHover}
+                        myReactions={
+                          new Set(
+                            (message.reactions ?? []).filter((r) => r.users.some((u) => u.id === me)).map((r) => r.emoji),
+                          )
+                        }
+                        onReact={(emoji) => void react(message.id, emoji)}
+                        onMoreReactions={() => {
+                          setReactTarget(message.id);
+                          setMention(null);
+                          setEmojiOpen(true);
+                          setActiveMessage(null);
+                        }}
+                        onReply={() => startReply(message)}
+                      />
                       {!grouped ? (
                         <span className="mb-1 px-1 text-[11px] text-ink-muted">
                           {mine ? "You" : <span className="font-semibold" style={{ color: message.author.color }}>{message.author.name}</span>}
@@ -417,16 +542,26 @@ export function ChatPanel({
                           {timeLabel(message.createdAt)}
                         </span>
                       ) : null}
+                      {message.replyTo ? (
+                        <ReplyQuote
+                          reply={message.replyTo}
+                          meId={me}
+                          mine={mine}
+                          onJump={() => jumpTo(message.replyTo!.id)}
+                        />
+                      ) : null}
                       {message.text ? (
                         <p
                           title={new Date(message.createdAt).toLocaleString()}
                           className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[15px] leading-6 ${
                             mine
                               ? "rounded-br-md bg-accent text-white"
-                              : "rounded-bl-md border border-line bg-surface text-ink"
+                              : mentionsMe
+                                ? "rounded-bl-md border border-accent/60 bg-accent-soft text-ink"
+                                : "rounded-bl-md border border-line bg-surface text-ink"
                           }`}
                         >
-                          <Linkified text={message.text} />
+                          <MessageText text={message.text} mentions={message.mentions} meId={me} mine={mine} />
                         </p>
                       ) : null}
                       {message.attachments?.length ? (
@@ -435,6 +570,14 @@ export function ChatPanel({
                           available={available}
                           mine={mine}
                           onOpen={setPreviewFile}
+                        />
+                      ) : null}
+                      {message.reactions?.length ? (
+                        <ReactionChips
+                          reactions={message.reactions}
+                          meId={me}
+                          mine={mine}
+                          onToggle={(emoji) => void react(message.id, emoji)}
                         />
                       ) : null}
                     </div>
@@ -477,15 +620,27 @@ export function ChatPanel({
           </form>
         ) : (
           <form onSubmit={(event) => void submit(event)} className="relative">
+            {replyTo ? <ReplyingTo message={replyTo} meId={me} onCancel={() => setReplyTo(null)} /> : null}
             <PendingAttachments
               items={pending}
               onRemove={(key) => setPending((current) => current.filter((item) => item.key !== key))}
             />
+            {mention && !emojiOpen ? (
+              <MentionPicker
+                users={suggestions}
+                query={mention.query}
+                activeIndex={Math.min(mentionIndex, Math.max(0, suggestions.length - 1))}
+                anyoneOnline={others.length > 0}
+                onPick={pickMention}
+                onHover={setMentionIndex}
+              />
+            ) : null}
             {emojiOpen ? (
               <EmojiPicker
-                onPick={insertEmoji}
+                onPick={pickEmoji}
                 onClose={() => {
                   setEmojiOpen(false);
+                  setReactTarget(null);
                   inputRef.current?.focus();
                 }}
               />
@@ -538,11 +693,14 @@ export function ChatPanel({
               onChange={(event) => {
                 setDraft(event.target.value);
                 setError("");
+                updateMention(event.target.value, event.target.selectionStart);
                 if (event.target.value) onTyping();
               }}
+              onSelect={(event) => updateMention(event.currentTarget.value, event.currentTarget.selectionStart)}
+              onBlur={() => setMention(null)}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
-              placeholder="Write a message… (Ctrl + / for emoji)"
+              placeholder="Write a message… (@ to mention, Ctrl + / for emoji)"
               aria-label="Message"
               className="max-h-36 min-h-11 flex-1 resize-none rounded-2xl border border-line bg-surface px-4 py-2.5 text-[15px] leading-6 text-ink outline-none transition [field-sizing:content] focus:border-accent"
             />

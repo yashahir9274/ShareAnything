@@ -11,6 +11,13 @@ export const CHAT_LIMITS = {
   historyPage: 200,
   /** Files per message. */
   attachmentsMax: 10,
+  /** People @mentioned per message. */
+  mentionsMax: 20,
+  /** Different emoji reactions per message, and people per reaction. */
+  reactionsMax: 20,
+  reactionUsersMax: 200,
+  /** How much of the original a reply quotes. */
+  replySnippetMax: 140,
 } as const;
 
 /** Avatar colours people are assigned (contrast-checked against white text). */
@@ -47,7 +54,38 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   attachments?: ChatAttachment[];
+  /** People @mentioned in the text (each appears as "@Name"). */
+  mentions?: ChatUser[];
+  /** Emoji reactions, in the order they were first added. */
+  reactions?: ChatReaction[];
+  /** The message this one replies to (a short quote of it). */
+  replyTo?: ChatReplyRef;
 };
+
+export type ChatReaction = { emoji: string; users: ChatUser[] };
+
+export type ChatReplyRef = {
+  id: string;
+  author: ChatUser;
+  /** The start of the original text ("" if it only had files). */
+  text: string;
+  /** How many files the original had. */
+  files?: number;
+};
+
+/** Quick reactions shown when hovering a message. */
+export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
+
+const EMOJI_PART = /\p{Extended_Pictographic}|\p{Regional_Indicator}/gu;
+const EMOJI_MODIFIERS = /[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu;
+
+/** A single emoji (incl. skin tones, flags, ZWJ sequences); nothing else. */
+export function isReactionEmoji(value: unknown): value is string {
+  if (typeof value !== "string" || !value || value.length > 16) return false;
+  if (!value.match(EMOJI_PART)) return false;
+  // Whatever is left after removing emoji and their joiners/modifiers must be nothing.
+  return value.replace(EMOJI_PART, "").replace(EMOJI_MODIFIERS, "") === "";
+}
 
 export type PresenceList = {
   noteId: string;
@@ -82,4 +120,21 @@ export function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] ?? "?").slice(0, 2);
   return letters.toUpperCase();
+}
+
+/**
+ * Mentions sent with a message: real users whose "@Name" is in the text,
+ * without duplicates or the author. Anything else is dropped.
+ */
+export function cleanMentions(input: unknown, text: string, authorId: string): ChatUser[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const mentions: ChatUser[] = [];
+  for (const item of input.slice(0, CHAT_LIMITS.mentionsMax)) {
+    const user = cleanUser(item);
+    if (!user || user.id === authorId || seen.has(user.id) || !text.includes(`@${user.name}`)) continue;
+    seen.add(user.id);
+    mentions.push(user);
+  }
+  return mentions;
 }

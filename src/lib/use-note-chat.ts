@@ -71,6 +71,12 @@ export function useNoteChat(options: {
       if (payload.message.author.id !== identityRef.current?.id) onMessageRef.current?.(payload.message);
     }
 
+    /** A message changed (e.g. someone reacted): swap in the new version. */
+    function onChatUpdate(payload: { noteId: string; message: ChatMessage }) {
+      if (payload.noteId !== noteId) return;
+      setMessages((current) => current.map((m) => (m.id === payload.message.id ? payload.message : m)));
+    }
+
     function onPresence(payload: PresenceList) {
       if (payload.noteId === noteId) setOnline(payload.users);
     }
@@ -82,11 +88,13 @@ export function useNoteChat(options: {
     }
 
     socket.on("note:chat-message", onChatMessage);
+    socket.on("note:chat-update", onChatUpdate);
     socket.on("note:presence", onPresence);
     socket.on("note:typing", onTyping);
     return () => {
       cancelled = true;
       socket.off("note:chat-message", onChatMessage);
+      socket.off("note:chat-update", onChatUpdate);
       socket.off("note:presence", onPresence);
       socket.off("note:typing", onTyping);
     };
@@ -103,7 +111,7 @@ export function useNoteChat(options: {
   }, [typing]);
 
   const send = useCallback(
-    (text: string, attachmentIds: string[] = []) =>
+    (text: string, attachmentIds: string[] = [], mentions: ChatUser[] = [], replyTo?: string) =>
       new Promise<string | null>((resolve) => {
         const me = identityRef.current;
         if (!me) return resolve("Not ready yet");
@@ -114,6 +122,8 @@ export function useNoteChat(options: {
             user: { id: me.id, name: me.name, color: me.color },
             text,
             ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
+            ...(mentions.length ? { mentions } : {}),
+            ...(replyTo ? { replyTo } : {}),
           },
           (result: Ack & { message?: ChatMessage }) => {
             if (!result.ok) return resolve(result.error);
@@ -122,6 +132,26 @@ export function useNoteChat(options: {
               setMessages((current) => (current.some((m) => m.id === message.id) ? current : [...current, message]));
             }
             lastTypingSent.current = 0;
+            resolve(null);
+          },
+        );
+      }),
+    [noteId],
+  );
+
+  /** Adds your emoji reaction to a message, or takes it back if it's already yours. */
+  const react = useCallback(
+    (messageId: string, emoji: string) =>
+      new Promise<string | null>((resolve) => {
+        const me = identityRef.current;
+        if (!me) return resolve("Not ready yet");
+        getSocket().emit(
+          "note:chat-react",
+          { noteId, messageId, emoji, user: { id: me.id, name: me.name, color: me.color } },
+          (result: Ack & { message?: ChatMessage }) => {
+            if (!result.ok) return resolve(result.error);
+            const message = result.message;
+            if (message) setMessages((current) => current.map((m) => (m.id === message.id ? message : m)));
             resolve(null);
           },
         );
@@ -138,5 +168,5 @@ export function useNoteChat(options: {
     getSocket().emit("note:typing", { noteId, user: { id: me.id, name: me.name, color: me.color } });
   }, [noteId]);
 
-  return { messages, loaded, online, typing: typing.map((t) => t.user), send, notifyTyping };
+  return { messages, loaded, online, typing: typing.map((t) => t.user), send, react, notifyTyping };
 }

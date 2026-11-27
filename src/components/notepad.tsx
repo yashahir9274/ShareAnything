@@ -83,6 +83,10 @@ export function Notepad({ noteId }: NotepadProps) {
   const viewRef = useRef<View>(view);
   const [editor, setEditor] = useState<Editor | null>(null);
   const identity = useIdentity();
+  const identityRef = useRef(identity);
+  useEffect(() => {
+    identityRef.current = identity;
+  }, [identity]);
 
   // Activity you haven't seen yet: shown on the tabs and in the browser tab title.
   const [unreadChat, setUnreadChat] = useState(0);
@@ -152,9 +156,16 @@ export function Notepad({ noteId }: NotepadProps) {
       if (viewRef.current !== "chat" || pageIsAway()) setUnreadChat((n) => n + 1);
       // Never include the message text: just who sent something.
       const fileCount = message.attachments?.length ?? 0;
+      const myId = identityRef.current?.id;
+      const mentionedMe = message.mentions?.some((user) => user.id === myId);
+      const repliedToMe = message.replyTo?.author.id === myId;
       notifyIfAway({
         title: `New message · ${noteLabelRef.current}`,
-        body: fileCount
+        body: mentionedMe
+          ? `${message.author.name} mentioned you`
+          : repliedToMe
+            ? `${message.author.name} replied to you`
+            : fileCount
           ? `${message.author.name} sent ${fileCount === 1 ? "a file" : `${fileCount} files`}`
           : `${message.author.name} sent a message`,
         tag: `chat:${noteId}`,
@@ -566,6 +577,7 @@ export function Notepad({ noteId }: NotepadProps) {
               typing={chat.typing}
               identity={identity}
               onSend={chat.send}
+              onReact={chat.react}
               onTyping={chat.notifyTyping}
               onFirstInteraction={() => void askNotificationsOnce()}
               files={filesState.files}

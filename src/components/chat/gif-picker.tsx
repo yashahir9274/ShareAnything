@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { gifPreviewUrl, gifStillUrl, gifVideoUrl, type GifResult } from "@/lib/gifs";
+import { BlurredMedia } from "./blurred-media";
 
 /** Quick searches shown above the results. */
 const TOPICS = ["Haha", "Love", "Yes", "No", "Wow", "Thanks", "Party", "Sad", "Hi", "OK", "Dance", "Facepalm"];
@@ -216,7 +217,7 @@ export function GifPicker({ onPick, autoFocus = true }: { onPick: (gif: GifResul
 }
 
 /** A GIF in a message: a looping muted video that only plays while it's on screen. */
-export function GifMessage({ gif, onOpen }: { gif: GifResult; onOpen?: () => void }) {
+export function GifMessage({ gif }: { gif: GifResult }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = videoRef.current;
@@ -230,11 +231,9 @@ export function GifMessage({ gif, onOpen }: { gif: GifResult; onOpen?: () => voi
   }, []);
   const width = Math.min(260, gif.width);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title={gif.title || "GIF"}
-      className="relative block overflow-hidden rounded-2xl border border-line bg-paper"
+    <BlurredMedia
+      label="GIF"
+      className="block rounded-2xl border border-line bg-paper"
       style={{ width, aspectRatio: `${gif.width} / ${gif.height}`, maxWidth: "100%" }}
     >
       <video
@@ -252,6 +251,6 @@ export function GifMessage({ gif, onOpen }: { gif: GifResult; onOpen?: () => voi
       <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
         GIF
       </span>
-    </button>
+    </BlurredMedia>
   );
 }

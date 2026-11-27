@@ -1,5 +1,6 @@
 "use client";
 
+import { BlurredMedia } from "./blurred-media";
 import { FileIcon } from "@/components/media/file-icon";
 import { FileThumb } from "@/components/media/file-preview";
 import type { ChatAttachment } from "@/lib/chat";
@@ -36,15 +37,14 @@ export function MessageAttachments({
         }
         if (file.kind === "image" || file.kind === "video") {
           return (
-            <button
+            <BlurredMedia
               key={file.id}
-              type="button"
-              onClick={() => onOpen(file)}
-              title={file.kind === "image" ? `View ${file.name}` : `Play ${file.name}`}
-              className="group/att relative block h-44 w-64 max-w-full overflow-hidden rounded-2xl border border-line bg-paper shadow-sm transition hover:brightness-95"
+              label={file.kind === "image" ? "photo" : "video"}
+              onOpen={() => onOpen(file)}
+              className="block h-44 w-64 max-w-full rounded-2xl border border-line bg-paper"
             >
               <FileThumb file={file} />
-            </button>
+            </BlurredMedia>
           );
         }
         return (

@@ -20,7 +20,18 @@ import { fileRawUrl, formatBytes, type NoteFile } from "@/lib/files";
 import { MessageAttachments, PendingAttachments, type PendingAttachment } from "./chat-attachments";
 import { EmojiPicker } from "./emoji-picker";
 import { MentionPicker, MessageText, findMentionQuery, matchMentions } from "./mentions";
-import { MessageActions, ReactionChips, ReplyQuote, ReplyingTo, useCanHover } from "./message-extras";
+import { isJumboEmoji } from "./fluent-emoji";
+import { ShortcodePicker, emojiForCode, findShortcodeQuery, matchShortcodes } from "./emoji-shortcodes";
+import { hideMessageForMe, useHiddenMessages } from "@/lib/hidden-messages";
+import {
+  MessageActions,
+  ReactionChips,
+  ReplyQuote,
+  ReplyingTo,
+  TypingIndicator,
+  useCanHover,
+  type MessageMenuItem,
+} from "./message-extras";
 import { setIdentityName, type Identity } from "@/lib/identity";
 import { disableNotifications, enableNotifications, useNotifyState } from "@/lib/notifications";
 import { Avatar, AvatarStack } from "./avatars";
@@ -34,6 +45,12 @@ type ChatPanelProps = {
   onSend: (text: string, attachmentIds?: string[], mentions?: ChatUser[], replyTo?: string) => Promise<string | null>;
   /** Toggle your emoji reaction on a message. Resolves to an error message or null. */
   onReact: (messageId: string, emoji: string) => Promise<string | null>;
+  /** Edit the text of your own message. Resolves to an error message or null. */
+  onEdit: (messageId: string, text: string, mentions?: ChatUser[]) => Promise<string | null>;
+  /** Delete your own message for everyone. Resolves to an error message or null. */
+  onDeleteForEveryone: (messageId: string) => Promise<string | null>;
+  /** Used to remember "delete for me" per note. */
+  noteId: string;
   onTyping: () => void;
   /** First click inside the chat (used to ask for notifications when Chat was opened by link). */
   onFirstInteraction?: () => void;
@@ -139,6 +156,9 @@ export function ChatPanel({
   identity,
   onSend,
   onReact,
+  onEdit,
+  onDeleteForEveryone,
+  noteId,
   onTyping,
   onFirstInteraction,
   files,
@@ -198,6 +218,102 @@ export function ChatPanel({
   }
   const others = online.filter((user) => user.id !== identity?.id);
   const suggestions = mention ? matchMentions(others, mention.query) : [];
+
+  // ":lol" emoji suggestions.
+  const [shortcode, setShortcode] = useState<{ start: number; query: string } | null>(null);
+  const [shortcodeIndex, setShortcodeIndex] = useState(0);
+  const emojiMatches = shortcode ? matchShortcodes(shortcode.query) : [];
+
+  // Editing one of your messages / deleting a message.
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  /** The message being deleted, and how old it was when you chose Delete. */
+  const [deleting, setDeleting] = useState<{ message: ChatMessage; age: number } | null>(null);
+  const hidden = useHiddenMessages(noteId);
+
+  function updateShortcode(value: string, caret: number | null) {
+    const next = caret === null ? null : findShortcodeQuery(value, caret);
+    if (!next) {
+      if (shortcode) setShortcode(null);
+      return;
+    }
+    if (shortcode?.start === next.start && shortcode.query === next.query) return;
+    setShortcodeIndex(0);
+    setShortcode(next);
+  }
+
+  /** Replaces ":query" before the caret with the emoji. */
+  function pickShortcode(char: string) {
+    if (!shortcode) return;
+    const input = inputRef.current;
+    const caret = input?.selectionStart ?? draft.length;
+    const next = `${draft.slice(0, shortcode.start)}${char}${draft.slice(caret)}`.slice(0, CHAT_LIMITS.textMax);
+    setDraft(next);
+    setShortcode(null);
+    input?.focus();
+    const at = shortcode.start + char.length;
+    window.setTimeout(() => input?.setSelectionRange(at, at), 0);
+  }
+
+  /** ":lol:" typed in full turns straight into 😆. Returns the new text, or null if nothing changed. */
+  function convertShortcode(value: string, caret: number | null): { text: string; caret: number } | null {
+    if (caret === null) return null;
+    const match = value.slice(0, caret).match(/(^|[\s(]):([a-z0-9_+-]{2,30}):$/i);
+    const char = match ? emojiForCode(match[2]) : null;
+    if (!match || !char) return null;
+    const start = caret - match[2].length - 2;
+    return { text: `${value.slice(0, start)}${char}${value.slice(caret)}`, caret: start + char.length };
+  }
+
+  function updateSuggestions(value: string, caret: number | null) {
+    updateMention(value, caret);
+    updateShortcode(value, caret);
+  }
+
+  function startEdit(message: ChatMessage) {
+    setEditing(message);
+    setReplyTo(null);
+    setPending([]);
+    setDraft(message.text);
+    setActiveMessage(null);
+    const input = inputRef.current;
+    input?.focus();
+    window.setTimeout(() => input?.setSelectionRange(message.text.length, message.text.length), 0);
+  }
+
+  function cancelEdit() {
+    setEditing(null);
+    setDraft("");
+  }
+
+  /** The "⋯" menu for a message. */
+  function menuFor(message: ChatMessage, mine: boolean): MessageMenuItem[] {
+    const age = messageAge(message);
+    const items: MessageMenuItem[] = [];
+    if (mine && !message.deleted && message.text) {
+      items.push({
+        label: "Edit",
+        onSelect: () => startEdit(message),
+        disabledReason: !message.ownable
+          ? "Sent before editing was available"
+          : age > CHAT_LIMITS.editWindowMs
+            ? "Messages can be edited for 15 minutes"
+            : undefined,
+      });
+    }
+    if (!message.deleted && message.text) {
+      items.push({
+        label: "Copy text",
+        onSelect: () => {
+          void navigator.clipboard?.writeText(message.text).then(
+            () => dialogs.notify("Copied"),
+            () => dialogs.notify("Couldn’t copy", "error"),
+          );
+        },
+      });
+    }
+    items.push({ label: "Delete…", danger: true, onSelect: () => setDeleting({ message, age }) });
+    return items;
+  }
 
   function updateMention(value: string, caret: number | null) {
     const next = caret === null ? null : findMentionQuery(value, caret);
@@ -317,8 +433,9 @@ export function ChatPanel({
 
   // Group consecutive messages from the same person (within 5 minutes) and add day separators.
   const rows = useMemo(() => {
-    return messages.map((message, index) => {
-      const previous = messages[index - 1];
+    const shown = messages.filter((message) => !hidden.has(message.id));
+    return shown.map((message, index) => {
+      const previous = shown[index - 1];
       const newDay = !previous || dayLabel(previous.createdAt) !== dayLabel(message.createdAt);
       const grouped =
         !newDay &&
@@ -326,7 +443,7 @@ export function ChatPanel({
         new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUP_WINDOW_MS;
       return { message, newDay, grouped };
     });
-  }, [messages]);
+  }, [messages, hidden]);
 
   // Keep the newest message in view unless the reader has scrolled up.
   useLayoutEffect(() => {
@@ -347,6 +464,27 @@ export function ChatPanel({
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const text = draft.trim();
+    if (editing) {
+      if (sending) return;
+      if (!text && !editing.attachments?.length) {
+        setError("A message can’t be empty — delete it instead.");
+        return;
+      }
+      setSending(true);
+      setError("");
+      const problem = await onEdit(editing.id, text, mentionsIn(text));
+      setSending(false);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      setEditing(null);
+      setDraft("");
+      setMention(null);
+      setShortcode(null);
+      inputRef.current?.focus();
+      return;
+    }
     if ((!text && !readyIds.length) || sending) return;
     if (uploading) {
       setError("Wait for the files to finish uploading.");
@@ -364,12 +502,41 @@ export function ChatPanel({
     setDraft("");
     setPending([]);
     setMention(null);
+    setShortcode(null);
     picked.current.clear();
     setReplyTo(null);
     inputRef.current?.focus();
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // The ":emoji" list takes the arrow keys, Enter/Tab and Escape while it's open.
+    if (shortcode) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setShortcode(null);
+        return;
+      }
+      if (emojiMatches.length) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setShortcodeIndex((index) => (index + step + emojiMatches.length) % emojiMatches.length);
+          return;
+        }
+        if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          pickShortcode(emojiMatches[Math.min(shortcodeIndex, emojiMatches.length - 1)].char);
+          return;
+        }
+      }
+    }
+    if (event.key === "Escape" && editing) {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelEdit();
+      return;
+    }
     // The @mention list takes the arrow keys, Enter/Tab and Escape while it's open.
     if (mention) {
       if (event.key === "Escape") {
@@ -423,14 +590,6 @@ export function ChatPanel({
   }
 
   const me = identity?.id;
-  const typingText =
-    typing.length === 0
-      ? ""
-      : typing.length === 1
-        ? `${typing[0].name} is typing…`
-        : typing.length === 2
-          ? `${typing[0].name} and ${typing[1].name} are typing…`
-          : `${typing.length} people are typing…`;
 
   return (
     <div
@@ -499,6 +658,7 @@ export function ChatPanel({
             {rows.map(({ message, newDay, grouped }) => {
               const mine = message.author.id === me;
               const mentionsMe = !mine && Boolean(message.mentions?.some((user) => user.id === me));
+              const jumbo = !message.replyTo && isJumboEmoji(message.text);
               return (
                 <li key={message.id} id={`msg-${message.id}`} className="rounded-2xl">
                   {newDay ? (
@@ -521,6 +681,8 @@ export function ChatPanel({
                         mine={mine}
                         visible={activeMessage === message.id}
                         hoverOnly={canHover}
+                        reactable={!message.deleted}
+                        menu={() => menuFor(message, mine)}
                         myReactions={
                           new Set(
                             (message.reactions ?? []).filter((r) => r.users.some((u) => u.id === me)).map((r) => r.emoji),
@@ -550,18 +712,45 @@ export function ChatPanel({
                           onJump={() => jumpTo(message.replyTo!.id)}
                         />
                       ) : null}
+                      {message.deleted ? (
+                        <p
+                          title={new Date(message.createdAt).toLocaleString()}
+                          className={`flex items-center gap-1.5 rounded-2xl border border-dashed border-line px-3.5 py-2 text-[14px] italic text-ink-muted ${
+                            mine ? "rounded-br-md" : "rounded-bl-md"
+                          }`}
+                        >
+                          <span aria-hidden>🚫</span>
+                          {mine ? "You deleted this message" : "This message was deleted"}
+                        </p>
+                      ) : null}
                       {message.text ? (
                         <p
                           title={new Date(message.createdAt).toLocaleString()}
                           className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-[15px] leading-6 ${
-                            mine
+                            jumbo
+                              ? "px-1 py-0 leading-none"
+                              : mine
                               ? "rounded-br-md bg-accent text-white"
                               : mentionsMe
                                 ? "rounded-bl-md border border-accent/60 bg-accent-soft text-ink"
                                 : "rounded-bl-md border border-line bg-surface text-ink"
                           }`}
                         >
-                          <MessageText text={message.text} mentions={message.mentions} meId={me} mine={mine} />
+                          <MessageText
+                            text={message.text}
+                            mentions={message.mentions}
+                            meId={me}
+                            mine={mine}
+                            emojiSize={jumbo ? "h-12 w-12" : undefined}
+                          />
+                          {message.editedAt ? (
+                            <span
+                              className={`ml-1.5 text-[10px] italic ${mine && !jumbo ? "text-white/75" : "text-ink-muted"}`}
+                              title={`Edited ${new Date(message.editedAt).toLocaleString()}`}
+                            >
+                              edited
+                            </span>
+                          ) : null}
                         </p>
                       ) : null}
                       {message.attachments?.length ? (
@@ -591,9 +780,9 @@ export function ChatPanel({
 
       {/* Typing + composer */}
       <div className="shrink-0 border-t border-line/80 px-3 pb-3 pt-1.5 sm:px-5">
-        <p className="h-5 px-1 text-[11px] text-ink-muted" aria-live="polite">
-          {typingText}
-        </p>
+        <div className="flex h-7 items-center px-1">
+          <TypingIndicator users={typing} />
+        </div>
         {identity && !identity.named ? (
           <form
             className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-3 sm:flex-row sm:items-center"
@@ -620,7 +809,36 @@ export function ChatPanel({
           </form>
         ) : (
           <form onSubmit={(event) => void submit(event)} className="relative">
-            {replyTo ? <ReplyingTo message={replyTo} meId={me} onCancel={() => setReplyTo(null)} /> : null}
+            {editing ? (
+              <div className="mb-2 flex items-center gap-2 rounded-2xl border border-accent/50 bg-accent-soft px-3 py-2 animate-fade-up">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+                <div className="min-w-0 flex-1 text-xs">
+                  <p className="font-semibold text-ink">Editing message</p>
+                  <p className="truncate text-ink-muted">{editing.text}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  aria-label="Cancel editing (Esc)"
+                  title="Cancel editing (Esc)"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-muted transition hover:bg-surface hover:text-ink"
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+            {replyTo && !editing ? <ReplyingTo message={replyTo} meId={me} onCancel={() => setReplyTo(null)} /> : null}
+            {shortcode && !emojiOpen && !mention ? (
+              <ShortcodePicker
+                items={emojiMatches}
+                query={shortcode.query}
+                activeIndex={Math.min(shortcodeIndex, Math.max(0, emojiMatches.length - 1))}
+                onPick={(item) => pickShortcode(item.char)}
+                onHover={setShortcodeIndex}
+              />
+            ) : null}
             <PendingAttachments
               items={pending}
               onRemove={(key) => setPending((current) => current.filter((item) => item.key !== key))}
@@ -691,13 +909,24 @@ export function ChatPanel({
               rows={1}
               maxLength={CHAT_LIMITS.textMax}
               onChange={(event) => {
+                const converted = convertShortcode(event.target.value, event.target.selectionStart);
+                if (converted) {
+                  const input = event.target;
+                  setDraft(converted.text);
+                  setShortcode(null);
+                  window.setTimeout(() => input.setSelectionRange(converted.caret, converted.caret), 0);
+                  return;
+                }
                 setDraft(event.target.value);
                 setError("");
-                updateMention(event.target.value, event.target.selectionStart);
+                updateSuggestions(event.target.value, event.target.selectionStart);
                 if (event.target.value) onTyping();
               }}
-              onSelect={(event) => updateMention(event.currentTarget.value, event.currentTarget.selectionStart)}
-              onBlur={() => setMention(null)}
+              onSelect={(event) => updateSuggestions(event.currentTarget.value, event.currentTarget.selectionStart)}
+              onBlur={() => {
+                setMention(null);
+                setShortcode(null);
+              }}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
               placeholder="Write a message… (@ to mention, Ctrl + / for emoji)"
@@ -706,8 +935,8 @@ export function ChatPanel({
             />
             <button
               type="submit"
-              disabled={(!draft.trim() && !readyIds.length) || sending || uploading}
-              aria-label="Send message"
+              disabled={editing ? sending : (!draft.trim() && !readyIds.length) || sending || uploading}
+              aria-label={editing ? "Save edit" : "Send message"}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition hover:brightness-105 disabled:opacity-40 disabled:shadow-none"
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -752,6 +981,117 @@ export function ChatPanel({
           </div>
         </Modal>
       ) : null}
+
+      {deleting ? (
+        <DeleteMessageDialog
+          message={deleting.message}
+          age={deleting.age}
+          mine={deleting.message.author.id === me}
+          onClose={() => setDeleting(null)}
+          onDeleteForMe={() => {
+            hideMessageForMe(noteId, deleting.message.id);
+            if (replyTo?.id === deleting.message.id) setReplyTo(null);
+            if (editing?.id === deleting.message.id) cancelEdit();
+            setDeleting(null);
+          }}
+          onDeleteForEveryone={async () => {
+            const problem = await onDeleteForEveryone(deleting.message.id);
+            if (problem) return problem;
+            if (replyTo?.id === deleting.message.id) setReplyTo(null);
+            if (editing?.id === deleting.message.id) cancelEdit();
+            setDeleting(null);
+            return null;
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** How long ago a message was sent (ms). Only called from event handlers, never while rendering. */
+function messageAge(message: ChatMessage) {
+  return Date.now() - Date.parse(message.createdAt);
+}
+
+/** Like WhatsApp: your own recent messages can be deleted for everyone; any message for just you. */
+function DeleteMessageDialog({
+  message,
+  age,
+  mine,
+  onClose,
+  onDeleteForMe,
+  onDeleteForEveryone,
+}: {
+  message: ChatMessage;
+  /** How old the message was when Delete was chosen (ms). */
+  age: number;
+  mine: boolean;
+  onClose: () => void;
+  onDeleteForMe: () => void;
+  onDeleteForEveryone: () => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const tooOld = age > CHAT_LIMITS.deleteWindowMs;
+  const canEveryone = mine && !message.deleted && Boolean(message.ownable) && !tooOld;
+  const whyNot = !mine
+    ? null
+    : message.deleted
+      ? null
+      : !message.ownable
+        ? "This message was sent before “delete for everyone” was available."
+        : tooOld
+          ? "Messages can be deleted for everyone for 2 days."
+          : null;
+
+  return (
+    <Modal title="Delete message?" size="sm" onClose={onClose}>
+      <div className="space-y-4 p-5 sm:p-6">
+        <p className="text-sm leading-6 text-ink-muted">
+          {canEveryone
+            ? "Delete for everyone removes it from this chat for all people. Delete for me only hides it on this device."
+            : "This hides the message on this device only. Others will still see it."}
+        </p>
+        {whyNot ? <p className="text-xs text-ink-muted">{whyNot}</p> : null}
+        {problem ? <p className="text-sm text-danger">{problem}</p> : null}
+        <div className="flex flex-col gap-2">
+          {canEveryone ? (
+            <button
+              type="button"
+              data-autofocus
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                const error = await onDeleteForEveryone();
+                setBusy(false);
+                if (error) setProblem(error);
+              }}
+              className="rounded-full bg-danger px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-105 disabled:opacity-50"
+            >
+              {busy ? "Deleting…" : "Delete for everyone"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            data-autofocus={canEveryone ? undefined : true}
+            onClick={onDeleteForMe}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              canEveryone
+                ? "border border-danger/40 text-danger hover:bg-danger/10"
+                : "bg-danger text-white hover:brightness-105"
+            }`}
+          >
+            Delete for me
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-4 py-2.5 text-sm font-medium text-ink-muted transition hover:text-ink"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

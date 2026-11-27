@@ -124,6 +124,8 @@ export function useNoteChat(options: {
             ...(attachmentIds.length ? { attachments: attachmentIds } : {}),
             ...(mentions.length ? { mentions } : {}),
             ...(replyTo ? { replyTo } : {}),
+            // Proves later that this is your message (for editing / deleting it).
+            ...(me.secret ? { secret: me.secret } : {}),
           },
           (result: Ack & { message?: ChatMessage }) => {
             if (!result.ok) return resolve(result.error);
@@ -159,6 +161,30 @@ export function useNoteChat(options: {
     [noteId],
   );
 
+  /** Edit (text) or delete-for-everyone one of your own messages. */
+  const change = useCallback(
+    (event: "note:chat-edit" | "note:chat-delete", payload: Record<string, unknown>) =>
+      new Promise<string | null>((resolve) => {
+        const me = identityRef.current;
+        if (!me?.secret) return resolve("Not ready yet");
+        getSocket().emit(event, { noteId, secret: me.secret, ...payload }, (result: Ack & { message?: ChatMessage }) => {
+          if (!result.ok) return resolve(result.error);
+          const message = result.message;
+          if (message) setMessages((current) => current.map((m) => (m.id === message.id ? message : m)));
+          resolve(null);
+        });
+      }),
+    [noteId],
+  );
+
+  const editMessage = useCallback(
+    (messageId: string, text: string, mentions: ChatUser[] = []) =>
+      change("note:chat-edit", { messageId, text, ...(mentions.length ? { mentions } : {}) }),
+    [change],
+  );
+
+  const deleteForEveryone = useCallback((messageId: string) => change("note:chat-delete", { messageId }), [change]);
+
   /** Call on each keystroke; tells others at most every 2 seconds. */
   const notifyTyping = useCallback(() => {
     const me = identityRef.current;
@@ -168,5 +194,15 @@ export function useNoteChat(options: {
     getSocket().emit("note:typing", { noteId, user: { id: me.id, name: me.name, color: me.color } });
   }, [noteId]);
 
-  return { messages, loaded, online, typing: typing.map((t) => t.user), send, react, notifyTyping };
+  return {
+    messages,
+    loaded,
+    online,
+    typing: typing.map((t) => t.user),
+    send,
+    react,
+    editMessage,
+    deleteForEveryone,
+    notifyTyping,
+  };
 }

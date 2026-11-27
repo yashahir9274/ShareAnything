@@ -36,7 +36,7 @@ import {
   type PresenceList,
   type TypingEvent,
 } from "../src/lib/chat";
-import { ChatError, addMessage, recentMessages, toggleReaction } from "./chat-store";
+import { ChatError, addMessage, deleteForEveryone, editMessage, recentMessages, toggleReaction } from "./chat-store";
 
 type SocketData = {
   access: Set<string>;
@@ -456,6 +456,7 @@ export function attachSocketServer(httpServer: HttpServer) {
           attachments?: unknown;
           mentions?: unknown;
           replyTo?: unknown;
+          secret?: unknown;
         },
         ack: unknown,
       ) => {
@@ -489,6 +490,7 @@ export function attachSocketServer(httpServer: HttpServer) {
             attachments,
             input.mentions,
             input.replyTo,
+            input.secret,
           );
           io.to(roomName(input.noteId)).emit("note:chat-message", {
             noteId: input.noteId,
@@ -540,6 +542,45 @@ export function attachSocketServer(httpServer: HttpServer) {
           if (error instanceof ChatError) return reply({ ok: false, error: error.message });
           console.error("note:chat-react failed", error);
           reply({ ok: false, error: "Couldn’t react" });
+        }
+      },
+    );
+
+    socket.on(
+      "note:chat-edit",
+      async (
+        input: { noteId?: unknown; messageId?: unknown; secret?: unknown; text?: unknown; mentions?: unknown },
+        ack: unknown,
+      ) => {
+        const reply = safeAck<object>(ack);
+        if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
+        if (!allowSend(socket.id)) return reply({ ok: false, error: "You’re sending messages too fast" });
+        try {
+          const changed = await editMessage(input.noteId, input.messageId, input.secret, input.text, input.mentions);
+          for (const message of changed) io.to(roomName(input.noteId)).emit("note:chat-update", { noteId: input.noteId, message });
+          reply({ ok: true, message: changed[0] });
+        } catch (error) {
+          if (error instanceof ChatError) return reply({ ok: false, error: error.message });
+          console.error("note:chat-edit failed", error);
+          reply({ ok: false, error: "Couldn’t edit the message" });
+        }
+      },
+    );
+
+    socket.on(
+      "note:chat-delete",
+      async (input: { noteId?: unknown; messageId?: unknown; secret?: unknown }, ack: unknown) => {
+        const reply = safeAck<object>(ack);
+        if (!hasAccess(socket, input?.noteId)) return reply({ ok: false, error: "No access" });
+        if (!allowSend(socket.id)) return reply({ ok: false, error: "Slow down a little" });
+        try {
+          const changed = await deleteForEveryone(input.noteId, input.messageId, input.secret);
+          for (const message of changed) io.to(roomName(input.noteId)).emit("note:chat-update", { noteId: input.noteId, message });
+          reply({ ok: true, message: changed[0] });
+        } catch (error) {
+          if (error instanceof ChatError) return reply({ ok: false, error: error.message });
+          console.error("note:chat-delete failed", error);
+          reply({ ok: false, error: "Couldn’t delete the message" });
         }
       },
     );

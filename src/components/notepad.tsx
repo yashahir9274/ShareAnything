@@ -578,6 +578,9 @@ export function Notepad({ noteId }: NotepadProps) {
               identity={identity}
               onSend={chat.send}
               onReact={chat.react}
+              onEdit={chat.editMessage}
+              onDeleteForEveryone={chat.deleteForEveryone}
+              noteId={noteId}
               onTyping={chat.notifyTyping}
               onFirstInteraction={() => void askNotificationsOnce()}
               files={filesState.files}

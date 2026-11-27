@@ -214,6 +214,39 @@ body {
   }
 }
 
+/* "Someone is typing" dots: a gentle wave. */
+.typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--ink-muted);
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* ---- Background ------------------------------------------------------
    Six calm designs take turns: each shows for 10s, then cross-fades (1.5s) into the
    next, drifting very slowly while it's on screen. Low contrast on purpose, so the

@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { createServer } from "http";
 import path from "path";
 import next from "next";
+import { handleEmojiRequest } from "./emoji-http";
 import { handleFileRequest } from "./file-http";
 import { handleNewNoteRequest } from "./new-note-http";
 import { flushAllNotes } from "./note-store";
@@ -45,6 +46,8 @@ app
         res.end(req.method === "HEAD" ? undefined : dev ? readFileSync(path.join(process.cwd(), "public", "sw.js")) : serviceWorker);
         return;
       }
+      // Fluent emoji images (self-hosted).
+      if (handleEmojiRequest(req, res)) return;
       // Media manager uploads/downloads (streamed; they never touch Next.js).
       if (handleFileRequest(req, res)) return;
       // "/" and "New note": unique ids are handed out here, never in the browser.

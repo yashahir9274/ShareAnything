@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import { Avatar } from "@/components/chat/avatars";
 import type { ChatUser } from "@/lib/chat";
+import { EmojiText } from "./fluent-emoji";
 
 /** "@ri" right before the caret → { start: index of "@", query: "ri" }. Names may contain spaces. */
 export function findMentionQuery(text: string, caret: number): { start: number; query: string } | null {
@@ -101,7 +102,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 const URL_PATTERN = /(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g;
 
-function Links({ text }: { text: string }) {
+function Links({ text, emojiSize }: { text: string; emojiSize?: string }) {
   const parts = text.split(URL_PATTERN);
   return (
     <>
@@ -111,7 +112,7 @@ function Links({ text }: { text: string }) {
             {part}
           </a>
         ) : (
-          <Fragment key={index}>{part}</Fragment>
+          <EmojiText key={index} text={part} size={emojiSize} />
         ),
       )}
     </>
@@ -128,13 +129,16 @@ export function MessageText({
   mentions,
   meId,
   mine,
+  emojiSize,
 }: {
   text: string;
   mentions?: ChatUser[];
   meId?: string;
   mine: boolean;
+  /** Size for emoji images (bigger when a message is only emoji). */
+  emojiSize?: string;
 }) {
-  if (!mentions?.length) return <Links text={text} />;
+  if (!mentions?.length) return <Links text={text} emojiSize={emojiSize} />;
   // Longest names first, so "@Riya Shah" wins over "@Riya".
   const byName = new Map(mentions.map((user) => [user.name, user]));
   const names = [...byName.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp);
@@ -143,7 +147,7 @@ export function MessageText({
     <>
       {parts.map((part, index) => {
         const user = index % 2 === 1 ? byName.get(part.slice(1)) : undefined;
-        if (!user) return <Links key={index} text={part} />;
+        if (!user) return <Links key={index} text={part} emojiSize={emojiSize} />;
         const isMe = user.id === meId;
         return (
           <span

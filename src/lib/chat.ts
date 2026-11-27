@@ -18,6 +18,9 @@ export const CHAT_LIMITS = {
   reactionUsersMax: 200,
   /** How much of the original a reply quotes. */
   replySnippetMax: 140,
+  /** Like WhatsApp: edit your message for 15 minutes, delete it for everyone for 2 days. */
+  editWindowMs: 15 * 60 * 1000,
+  deleteWindowMs: 2 * 24 * 60 * 60 * 1000,
 } as const;
 
 /** Avatar colours people are assigned (contrast-checked against white text). */
@@ -60,6 +63,12 @@ export type ChatMessage = {
   reactions?: ChatReaction[];
   /** The message this one replies to (a short quote of it). */
   replyTo?: ChatReplyRef;
+  /** When the author last edited the text. */
+  editedAt?: string;
+  /** Deleted for everyone by its author: no text, files or reactions left. */
+  deleted?: boolean;
+  /** Whether its author can still edit/delete it (false for old messages from before this existed). */
+  ownable?: boolean;
 };
 
 export type ChatReaction = { emoji: string; users: ChatUser[] };
@@ -71,6 +80,8 @@ export type ChatReplyRef = {
   text: string;
   /** How many files the original had. */
   files?: number;
+  /** The original was deleted for everyone. */
+  deleted?: boolean;
 };
 
 /** Quick reactions shown when hovering a message. */

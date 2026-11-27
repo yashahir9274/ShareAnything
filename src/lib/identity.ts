@@ -12,6 +12,11 @@ import { USER_COLORS, cleanName, type ChatUser } from "@/lib/chat";
 export type Identity = ChatUser & {
   /** False until the person picks a name (until then they're "Guest 1234"). */
   named: boolean;
+  /**
+   * Private to this browser, never shown to others. Sent with your messages so only
+   * you can edit or delete them later (the server keeps just a hash of it).
+   */
+  secret?: string;
 };
 
 const KEY = "shareanything:identity";
@@ -31,6 +36,7 @@ function create(): Identity {
     name: `Guest ${1000 + ((bytes[0] * 256 + bytes[1]) % 9000)}`,
     color: USER_COLORS[bytes[0] % USER_COLORS.length],
     named: false,
+    secret: randomId() + randomId(),
   };
 }
 
@@ -49,6 +55,12 @@ export function getIdentity(): Identity {
     try {
       const parsed = JSON.parse(raw) as Identity;
       if (parsed?.id && parsed.name && parsed.color) {
+        // Identities from before message editing existed get their secret now.
+        if (typeof parsed.secret !== "string" || parsed.secret.length < 32) {
+          const upgraded = { ...parsed, secret: randomId() + randomId() };
+          save(upgraded, false);
+          return upgraded;
+        }
         cachedRaw = raw;
         cached = parsed;
         return parsed;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-import { QUICK_REACTIONS, type ChatMessage, type ChatReaction, type ChatReplyRef } from "@/lib/chat";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FluentEmoji } from "./fluent-emoji";
+import { QUICK_REACTIONS, type ChatMessage, type ChatReaction, type ChatReplyRef, type ChatUser } from "@/lib/chat";
 
 /** True on devices with a real hover (mouse/trackpad). Touch screens get tap-to-show instead. */
 export function useCanHover() {
@@ -35,15 +36,34 @@ function SmilePlusIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+/** One row in a message's "⋯" menu. */
+export type MessageMenuItem = {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  /** Greyed out with this reason as a tooltip (e.g. "Messages can be edited for 15 minutes"). */
+  disabledReason?: string;
+};
+
+function MoreIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden>
+      <path d="M5 12h.01M12 12h.01M19 12h.01" />
+    </svg>
+  );
+}
+
 /**
  * The bar that appears over a message on hover (or tap on phones):
- * quick reactions, "any emoji", and Reply.
+ * quick reactions, "any emoji", Reply, and a "⋯" menu (edit, copy, delete).
  */
 export function MessageActions({
   mine,
   visible,
   hoverOnly,
+  reactable,
   myReactions,
+  menu,
   onReact,
   onMoreReactions,
   onReply,
@@ -53,64 +73,129 @@ export function MessageActions({
   visible: boolean;
   /** Hidden until the message is hovered or focused. */
   hoverOnly: boolean;
+  /** False for deleted messages: only the menu is offered. */
+  reactable: boolean;
   myReactions: Set<string>;
+  /** Builds the "⋯" menu when it's opened (so time limits are checked at that moment). */
+  menu: () => MessageMenuItem[];
   onReact: (emoji: string) => void;
   onMoreReactions: () => void;
   onReply: () => void;
 }) {
+  const [menuItems, setMenuItems] = useState<MessageMenuItem[] | null>(null);
+  const menuOpen = menuItems !== null;
+  const setMenuOpen = (open: boolean) => setMenuItems(open ? menu() : null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointer(event: PointerEvent) {
+      if (!barRef.current?.contains(event.target as Node)) setMenuItems(null);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuItems(null);
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   if (!hoverOnly && !visible) return null;
   return (
     <div
+      ref={barRef}
       role="toolbar"
       aria-label="Message actions"
+      onClick={(event) => event.stopPropagation()}
       className={`absolute -top-5 z-10 flex items-center gap-0.5 rounded-full border border-line bg-surface p-0.5 shadow-[0_8px_24px_rgba(11,20,32,0.14)] ${
         mine ? "right-1" : "left-1"
-      } ${hoverOnly && !visible ? "message-actions" : "animate-fade-up"}`}
+      } ${hoverOnly && !visible && !menuOpen ? "message-actions" : "animate-fade-up"}`}
     >
-      {QUICK_REACTIONS.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          title={myReactions.has(emoji) ? `Remove ${emoji}` : `React ${emoji}`}
-          aria-label={`React ${emoji}`}
-          aria-pressed={myReactions.has(emoji)}
-          onClick={(event) => {
-            event.stopPropagation();
-            onReact(emoji);
-          }}
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-[17px] leading-none transition hover:scale-125 hover:bg-paper ${
-            myReactions.has(emoji) ? "bg-accent-soft" : ""
+      {reactable ? (
+        <>
+          {QUICK_REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              title={myReactions.has(emoji) ? `Remove ${emoji}` : `React ${emoji}`}
+              aria-label={`React ${emoji}`}
+              aria-pressed={myReactions.has(emoji)}
+              onClick={() => onReact(emoji)}
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-[17px] leading-none transition hover:scale-125 hover:bg-paper ${
+                myReactions.has(emoji) ? "bg-accent-soft" : ""
+              }`}
+            >
+              <FluentEmoji emoji={emoji} className="h-5 w-5" lazy={false} />
+            </button>
+          ))}
+          <button
+            type="button"
+            title="More reactions"
+            aria-label="More reactions"
+            onClick={onMoreReactions}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition hover:bg-paper hover:text-ink"
+          >
+            <SmilePlusIcon />
+          </button>
+          <span className="mx-0.5 h-4 w-px bg-line" aria-hidden />
+          <button
+            type="button"
+            title="Reply"
+            aria-label="Reply"
+            onClick={onReply}
+            className="flex h-7 items-center gap-1 rounded-full px-2 text-xs font-semibold text-ink-muted transition hover:bg-paper hover:text-ink"
+          >
+            <ReplyIcon className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Reply</span>
+          </button>
+        </>
+      ) : null}
+      <button
+        type="button"
+        title="More"
+        aria-label="More message options"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen(!menuOpen)}
+        className={`flex h-7 w-7 items-center justify-center rounded-full transition hover:bg-paper hover:text-ink ${
+          menuOpen ? "bg-paper text-ink" : "text-ink-muted"
+        }`}
+      >
+        <MoreIcon />
+      </button>
+
+      {menuOpen ? (
+        <div
+          role="menu"
+          aria-label="Message options"
+          className={`absolute top-full z-20 mt-1.5 w-52 rounded-2xl border border-line bg-surface p-1.5 shadow-[0_18px_48px_rgba(11,20,32,0.2)] animate-fade-up ${
+            mine ? "right-0" : "left-0"
           }`}
         >
-          {emoji}
-        </button>
-      ))}
-      <button
-        type="button"
-        title="More reactions"
-        aria-label="More reactions"
-        onClick={(event) => {
-          event.stopPropagation();
-          onMoreReactions();
-        }}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition hover:bg-paper hover:text-ink"
-      >
-        <SmilePlusIcon />
-      </button>
-      <span className="mx-0.5 h-4 w-px bg-line" aria-hidden />
-      <button
-        type="button"
-        title="Reply"
-        aria-label="Reply"
-        onClick={(event) => {
-          event.stopPropagation();
-          onReply();
-        }}
-        className="flex h-7 items-center gap-1 rounded-full px-2 text-xs font-semibold text-ink-muted transition hover:bg-paper hover:text-ink"
-      >
-        <ReplyIcon className="h-3.5 w-3.5" />
-        Reply
-      </button>
+          {(menuItems ?? []).map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              disabled={Boolean(item.disabledReason)}
+              title={item.disabledReason}
+              onClick={() => {
+                setMenuOpen(false);
+                item.onSelect();
+              }}
+              className={`flex w-full flex-col rounded-xl px-3 py-2 text-left text-sm transition enabled:hover:bg-paper disabled:cursor-not-allowed disabled:opacity-45 ${
+                item.danger ? "text-danger" : "text-ink"
+              }`}
+            >
+              {item.label}
+              {item.disabledReason ? <span className="text-[11px] text-ink-muted">{item.disabledReason}</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -145,7 +230,7 @@ export function ReactionChips({
               reacted ? "border-accent/70 bg-accent-soft font-semibold text-ink" : "border-line bg-surface text-ink-muted"
             }`}
           >
-            <span className="text-sm leading-none">{reaction.emoji}</span>
+            <FluentEmoji emoji={reaction.emoji} className="h-4 w-4" />
             {reaction.users.length}
           </button>
         );
@@ -154,7 +239,8 @@ export function ReactionChips({
   );
 }
 
-function replySummary(reply: Pick<ChatReplyRef, "text" | "files">) {
+function replySummary(reply: Pick<ChatReplyRef, "text" | "files" | "deleted">) {
+  if (reply.deleted) return "🚫 This message was deleted";
   if (reply.text) return reply.text;
   if (reply.files) return reply.files === 1 ? "📎 A file" : `📎 ${reply.files} files`;
   return "Message";
@@ -225,5 +311,55 @@ export function ReplyingTo({
         ×
       </button>
     </div>
+  );
+}
+
+/** "Riya Shah" stays; "Alexandria Montgomery" → "Alexandria"; "Supercalifragilistic" → "Supercalifrag…". */
+export function shortName(name: string, max = 14) {
+  if (name.length <= max) return name;
+  const first = name.split(/\s+/)[0];
+  if (first.length <= max) return first;
+  return `${name.slice(0, max - 1)}…`;
+}
+
+/** Who's typing: their avatar(s), bouncing dots and (shortened) names. */
+export function TypingIndicator({ users }: { users: ChatUser[] }) {
+  if (!users.length) return <span className="sr-only" aria-live="polite" />;
+  const names = users.map((user) => shortName(user.name));
+  const label =
+    users.length === 1
+      ? `${names[0]} is typing`
+      : users.length === 2
+        ? `${names[0]} and ${names[1]} are typing`
+        : `${names[0]}, ${names[1]} +${users.length - 2} are typing`;
+  const full =
+    users.length === 1 ? `${users[0].name} is typing` : `${users.map((u) => u.name).join(", ")} are typing`;
+  return (
+    <span className="inline-flex max-w-full items-center gap-2 animate-fade-up" title={full}>
+      <span className="flex shrink-0 -space-x-1.5">
+        {users.slice(0, 3).map((user) => (
+          <span
+            key={user.id}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white ring-2 ring-paper-elevated"
+            style={{ backgroundColor: user.color }}
+            aria-hidden
+          >
+            {user.name.trim().slice(0, 1).toUpperCase()}
+          </span>
+        ))}
+      </span>
+      <span className="flex shrink-0 items-center gap-[3px] rounded-full border border-line bg-surface px-2 py-1.5" aria-hidden>
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+      </span>
+      <span className="truncate text-[11px] text-ink-muted" aria-hidden>
+        <span className="font-semibold text-ink">{label.replace(/ (is|are) typing$/, "")}</span>
+        {users.length === 1 ? " is typing" : " are typing"}
+      </span>
+      <span className="sr-only" aria-live="polite">
+        {full}
+      </span>
+    </span>
   );
 }

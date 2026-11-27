@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ALL_EMOJIS, EMOJI_CATEGORIES } from "./emoji-data";
+import { FluentEmoji } from "./fluent-emoji";
 
 const RECENT_KEY = "shareanything:recent-emojis";
 const RECENT_MAX = 16;
@@ -67,7 +68,7 @@ export function EmojiPicker({ onPick, onClose }: { onPick: (emoji: string) => vo
         onClick={() => pick(char)}
         className="flex h-9 w-9 items-center justify-center rounded-xl text-[22px] leading-none transition hover:scale-110 hover:bg-paper focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
-        {char}
+        <FluentEmoji emoji={char} className="h-6 w-6" />
       </button>
     );
   }
